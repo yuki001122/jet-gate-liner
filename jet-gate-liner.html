@@ -1,0 +1,3308 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ジェット・ゲート・ライナー</title>
+<style>
+  /* ===== 画面全体の見た目 ===== */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000;
+    font-family: "Hiragino Kaku Gothic ProN", "Meiryo", "Yu Gothic", sans-serif; color: #fff; }
+  #game canvas { display: block; }
+  #hud2d, #weatherCanvas { position: fixed; inset: 0; pointer-events: none; }
+  #hudWeather { left: 14px; top: 66px !important; font-size: 18px; }
+
+  /* ===== ゲーム中の文字（タイム・ゲート数など） ===== */
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; }
+  .hudBox { position: absolute; top: 14px; background: rgba(0,0,0,.45); border-radius: 10px;
+    padding: 8px 16px; font-size: 22px; font-weight: bold; text-shadow: 0 2px 3px #000; }
+  #hudTime { left: 14px; }
+  #hudGate { left: 50%; transform: translateX(-50%); }
+  #hudPenalty { right: 14px; color: #ffd54f; }
+  #warning { position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
+    color: #ff5252; font-size: 22px; font-weight: bold; text-shadow: 0 2px 4px #000; display: none; }
+  #enemyWarn { position: absolute; top: 104px; left: 50%; transform: translateX(-50%);
+    color: #ff8a80; font-size: 20px; font-weight: bold; text-shadow: 0 2px 4px #000; display: none;
+    animation: blink .4s infinite alternate; }
+  #missileWarn { position: absolute; top: 134px; left: 50%; transform: translateX(-50%);
+    color: #ff1744; font-size: 22px; font-weight: 900; text-shadow: 0 0 6px #fff, 0 2px 4px #000; display: none;
+    animation: blink .25s infinite alternate; }
+  #hitFlash { position: fixed; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(255,0,0,0) 40%, rgba(255,30,0,.65) 100%); }
+  #hitFlash.show { animation: hitflash .5s ease-out; }
+  @keyframes hitflash { 0% { opacity: 1; } 100% { opacity: 0; } }
+  #centerMsg { position: absolute; top: 32%; left: 0; right: 0; text-align: center;
+    font-size: 56px; font-weight: 900; text-shadow: 0 4px 8px rgba(0,0,0,.7); }
+  #popup { position: absolute; top: 45%; left: 0; right: 0; text-align: center;
+    font-size: 34px; font-weight: 900; text-shadow: 0 3px 6px #000; opacity: 0; }
+  #popup.show { animation: pop 1.2s ease-out; }
+  @keyframes pop { 0% { opacity: 1; transform: scale(1.4); } 70% { opacity: 1; transform: scale(1); } 100% { opacity: 0; } }
+
+  /* 次のゲートの場所を教える目印 */
+  #crosshair { position: absolute; width: 34px; height: 34px; transform: translate(-50%, -50%);
+    border: 2px solid rgba(255,235,59,.9); border-radius: 50%; display: none;
+    box-shadow: 0 0 6px rgba(0,0,0,.6); }
+  #crosshair::before, #crosshair::after { content: ""; position: absolute; background: rgba(255,235,59,.9); }
+  #crosshair::before { left: 50%; top: -8px; bottom: -8px; width: 2px; transform: translateX(-50%); }
+  #crosshair::after { top: 50%; left: -8px; right: -8px; height: 2px; transform: translateY(-50%); }
+  #marker { position: absolute; transform: translate(-50%, -50%); text-align: center;
+    color: #ffeb3b; font-weight: bold; text-shadow: 0 2px 3px #000; display: none; }
+  #markerIcon { font-size: 30px; display: inline-block; }
+  #markerText { display: block; font-size: 14px; }
+
+  /* ===== タイトル・説明・結果などの画面 ===== */
+  .screen { position: fixed; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: linear-gradient(180deg, rgba(0,30,70,.55), rgba(0,0,0,.65));
+    overflow-y: auto; padding: 12px 0; box-sizing: border-box; }
+  .screen.active { display: flex; }
+  /* 遊び方の画面：ボタンを上に出して、説明はスクロールできるようにする */
+  #howtoScreen { justify-content: flex-start; }
+  #howtoScreen h2 { margin: 6px 0 8px; font-size: 34px; }
+  .howtoButtons { margin-bottom: 8px; }
+  .howtoButtons button { font-size: 22px; padding: 10px 30px; margin: 4px 8px; }
+  #howtoScreen .panel { max-height: calc(100vh - 190px); overflow-y: auto; font-size: 16px; line-height: 1.6; }
+  h1 { font-size: 64px; margin: 0 0 6px; letter-spacing: 4px;
+    background: linear-gradient(#fff, #7fd3ff); -webkit-background-clip: text; background-clip: text;
+    color: transparent; filter: drop-shadow(0 4px 6px rgba(0,0,0,.6)); }
+  h2 { font-size: 40px; margin: 0 0 14px; }
+  .sub { font-size: 20px; opacity: .9; margin-bottom: 28px; }
+  button { font: inherit; font-size: 24px; font-weight: bold; margin: 8px; padding: 12px 40px;
+    border: none; border-radius: 40px; cursor: pointer; color: #fff;
+    background: linear-gradient(#ff9a3c, #ff5e1a); box-shadow: 0 4px 0 #a33a00; }
+  button.blue { background: linear-gradient(#5ec8ff, #1e88e5); box-shadow: 0 4px 0 #0d4f8c; }
+  button:active { transform: translateY(3px); box-shadow: 0 1px 0 #000; }
+  .levels { display: flex; gap: 18px; margin-bottom: 10px; }
+  button.level { display: flex; flex-direction: column; align-items: center; min-width: 210px;
+    padding: 14px 24px; border-radius: 18px; background: rgba(255,255,255,.12);
+    border: 3px solid rgba(255,255,255,.5); box-shadow: none; }
+  button.level b { font-size: 32px; }
+  button.level small { font-size: 15px; font-weight: normal; margin-top: 4px; }
+  button.level.selected { background: linear-gradient(#ff9a3c, #ff5e1a); border-color: #fff;
+    box-shadow: 0 0 18px rgba(255,160,60,.9); }
+  .hint { margin-top: 14px; font-size: 16px; opacity: .8; }
+  .panel { background: rgba(0,0,0,.55); border-radius: 16px; padding: 20px 32px;
+    max-width: 680px; text-align: left; font-size: 18px; line-height: 1.7; }
+  .panel table { border-collapse: collapse; margin: 6px 0 10px; }
+  .panel td { padding: 2px 14px 2px 0; }
+  .key { display: inline-block; background: #fff; color: #222; border-radius: 6px;
+    padding: 0 10px; font-weight: bold; min-width: 20px; text-align: center; }
+  #resultRank { font-size: 120px; font-weight: 900; line-height: 1; margin: 4px 0; }
+  .rankS { color: #ffd700; } .rankA { color: #ff7043; } .rankB { color: #4fc3f7; } .rankC { color: #b0bec5; }
+  #newBest { color: #ffeb3b; font-size: 28px; font-weight: 900; animation: blink .6s infinite alternate; }
+  @keyframes blink { from { opacity: 1; } to { opacity: .4; } }
+  .ranking { margin: 10px auto 16px; border-collapse: collapse; font-size: 20px; }
+  .ranking td { padding: 3px 18px; border-bottom: 1px solid rgba(255,255,255,.2); }
+  .ranking tr.me { background: rgba(255,235,59,.3); font-weight: bold; }
+  #loadError { display: none; position: fixed; inset: 0; background: #222; align-items: center;
+    justify-content: center; font-size: 22px; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+
+<!-- 3Dの絵を描く場所 -->
+<div id="game"></div>
+<!-- 速度計・水平儀を描く透明なキャンバス -->
+<!-- 雨の水滴・稲光・画面の暗さを描く透明なキャンバス -->
+<canvas id="weatherCanvas"></canvas>
+<canvas id="hud2d"></canvas>
+
+<!-- ゲーム中の表示 -->
+<div id="hud">
+  <div class="hudBox" id="hudTime">TIME 0:00.00</div>
+  <div class="hudBox" id="hudGate">GATE 0 / 30</div>
+  <div class="hudBox" id="hudWeather">☀ 晴れ</div>
+  <div class="hudBox" id="hudPenalty">ペナルティ +0秒 ／ ボーナス −0秒</div>
+  <div id="warning">⚠ エリアの外／地面に近づいています！</div>
+  <div id="enemyWarn">⚠ 前方に戦闘機！ 赤い弾をよけろ！</div>
+  <div id="missileWarn">⚠ ミサイル接近！ 撃ち落とせ！</div>
+  <div id="hitFlash"></div>
+  <div id="centerMsg"></div>
+  <div id="popup"></div>
+  <div id="crosshair"></div>
+  <div id="marker"><span id="markerIcon">◎</span><span id="markerText"></span></div>
+</div>
+
+<!-- ① タイトル画面 -->
+<div class="screen active" id="titleScreen">
+  <h1>ジェット・ゲート・ライナー</h1>
+  <div class="sub">空母から発進！ 30個のゲートをくぐってゴールを目指せ！</div>
+  <div class="levels">
+    <button class="level selected" id="btnEasy"><b>初級</b><small>ゲート大きめ・ゆっくり</small></button>
+    <button class="level" id="btnHard"><b>上級</b><small>動く気球がじゃまをする！</small></button>
+  </div>
+  <button id="btnStart">始める</button>
+  <div class="hint" id="titleBest"></div>
+  <div class="hint">← → で難易度をえらんで、スペースキーで始められます</div>
+</div>
+
+<!-- ② 遊び方の説明画面 -->
+<div class="screen" id="howtoScreen">
+  <h2>遊び方 <span id="howtoLevel" style="color:#ffb74d"></span></h2>
+  <div class="howtoButtons">
+    <button id="btnHowtoBack" class="blue">← タイトルにもどって難易度をえらびなおす</button>
+    <button id="btnGo">出撃する！</button>
+  </div>
+  <div class="panel">
+    <b>■ 操作</b>
+    <table>
+      <tr><td><span class="key">↑</span> <span class="key">↓</span></td><td>上昇・下降</td></tr>
+      <tr><td><span class="key">←</span> <span class="key">→</span></td><td>左右に旋回</td></tr>
+      <tr><td><span class="key">スペース</span></td><td>カタパルト発進 ／ 押している間ブースト</td></tr>
+      <tr><td><span class="key">Z</span></td><td>機関砲を撃つ（押しっぱなしで連射。黄色い照準のほうへ飛ぶ）</td></tr>
+      <tr><td><span class="key">Esc</span></td><td>一時停止（ここからタイトルにもどることもできます）</td></tr>
+      <tr><td><span class="key">M</span></td><td>音のオン・オフ</td></tr>
+    </table>
+    <b>■ ルール</b><br>
+    ・30個のゲートをくぐってゴールラインを通過しよう！（黄色い目印が次のゲート）<br>
+    ・ゲートの真ん中の黄色い小さな輪を通る：<b style="color:#ffeb3b">パーフェクト！ タイム −1秒</b><br>
+    ・ゲートをくぐれなかった：<b style="color:#ffd54f">タイム +5秒</b><br>
+    ・ゲートの枠にぶつかった：<b style="color:#ffd54f">大きく減速 ＋ タイム +3秒</b><br>
+    ・前から来る戦闘機の機関砲（赤く光る弾）に当たる：<b style="color:#ffd54f">スピードがガクッと落ちる ＋ タイム +3秒</b><br>
+    ・前から来る戦闘機に弾を<span id="howtoHp"></span>発当てて撃墜：<b style="color:#ffeb3b">タイム −<span id="howtoBonus"></span>秒</b><br>
+    ・前から飛んでくるミサイルを撃ち落とす：<b style="color:#ffeb3b">タイム −<span id="howtoMissile"></span>秒</b>（当たると減速＋3秒）<br>
+    ・天気が変わる：<b>☀ 晴れ</b> → <b>🌧 小雨</b>（暗くなり、操作が少し重くなる） → <b>⛈ 嵐</b>（稲光・強い雨・風で上下にあおられる）<br>
+    <span id="howtoBalloon">・コースの中を動きまわる気球にぶつかる：<b style="color:#ffd54f">大きく減速 ＋ タイム +3秒</b><br></span>
+    ・地面や海に落ちる／エリアの外に出る：<b style="color:#ff5252">ゲームオーバー</b><br>
+    ・ランク：S（1分30秒以内） A（2分以内） B（3分以内） C（3分超）
+  </div>
+  <div class="hint">スペースキーで出撃 ／ Escキーでタイトルにもどって難易度をえらびなおせます（説明はマウスのホイールでスクロールできます）</div>
+</div>
+
+<!-- ③ 一時停止画面 -->
+<div class="screen" id="pauseScreen">
+  <h2>一時停止中</h2>
+  <button id="btnResume" class="blue">再開する（Esc）</button>
+  <button id="btnPauseTitle">タイトルへ（難易度をえらびなおす）</button>
+</div>
+
+<!-- ④ 結果画面 -->
+<div class="screen" id="resultScreen">
+  <h2>ゴール！</h2>
+  <div id="resultTime" style="font-size:44px;font-weight:900"></div>
+  <div id="resultDetail" style="font-size:18px;opacity:.9"></div>
+  <div id="resultRank"></div>
+  <div id="newBest"></div>
+  <div id="resultPlace" style="font-size:22px"></div>
+  <table class="ranking" id="rankingTable"></table>
+  <div>
+    <button id="btnRetry">もう一回</button>
+    <button id="btnResultTitle" class="blue">タイトルへ</button>
+  </div>
+  <div class="hint">スペースキーでもう一回</div>
+</div>
+
+<!-- ⑤ ゲームオーバー画面 -->
+<div class="screen" id="gameoverScreen">
+  <h2 style="color:#ff5252;font-size:56px">GAME OVER</h2>
+  <div class="sub" id="gameoverReason"></div>
+  <div>
+    <button id="btnRetry2">もう一回</button>
+    <button id="btnOverTitle" class="blue">タイトルへ</button>
+  </div>
+  <div class="hint">スペースキーでもう一回</div>
+</div>
+
+<!-- 3Dの部品（three.js）が読み込めなかったときのお知らせ -->
+<div id="loadError">3D表示の部品（three.js）を読み込めませんでした。<br>インターネットにつながっているか確認してください。</div>
+
+<!-- 3Dを描くための部品 three.js をインターネットから読み込む -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// =====================================================================
+// 1. 調整したい数字（ここを変えるとゲームの難しさが変わります）
+// =====================================================================
+const CONFIG = {
+  // --- コース ---
+  GATE_COUNT: 30,            // ゲートの数
+  FIRST_GATE_DISTANCE: 220,  // 空母の先端から1個目のゲートまでの距離
+  GATE_SHIFT_X: 45,          // 1つ前のゲートから左右にずれる最大の量
+  GATE_SHIFT_Y: 35,          // 1つ前のゲートから上下にずれる最大の量
+  GATE_LIMIT_X: 150,         // ゲートが置かれる左右のはば（中心から）
+  GATE_MIN_Y: 25,            // ゲートの一番低い高さ
+  GATE_MAX_Y: 95,            // ゲートの一番高い高さ
+  GATE_TUBE: 1.2,            // ゲートの枠の太さ
+  PLANE_HIT_SIZE: 1.5,       // ジェット機の当たり判定の大きさ
+  GOAL_DISTANCE: 200,        // 最後のゲートからゴールまでの距離
+
+  // --- ジェット機の動き ---
+  ACCEL: 25,                 // 速さが変わる勢い（加速・減速）
+  CATAPULT_ACCEL: 40,        // カタパルトの加速の強さ
+  LIFTOFF_PITCH: 0.18,       // 発進した直後の機首の上げ具合
+  PITCH_SPEED: 1.0,          // 上下に向きを変える速さ
+  MAX_PITCH: 0.7,            // 上下の向きの限界（大きいほど急上昇できる）
+  MAX_BANK: 0.7,             // 曲がるときに機体がかたむく量（見た目だけ）
+  AUTO_LEVEL: 1.2,           // 上下キーを離したとき水平に戻る強さ
+  INVERT_UPDOWN: false,      // true にすると ↑で下降・↓で上昇（飛行機ゲーム風）
+
+  // --- ペナルティ ---
+  PENALTY_MISS: 5,           // ゲート失敗のときに足される秒数
+  PENALTY_HIT: 3,            // 枠にぶつかったときに足される秒数
+  HIT_SPEED_RATE: 0.35,      // ぶつかったあとの速さの割合（0.35 = 35%まで減速）
+  PENALTY_BALLOON: 3,        // 気球（上級）にぶつかったときに足される秒数
+  BALLOON_HIT_SIZE: 7.5,     // 気球の当たり判定の大きさ（中心からの距離）
+
+  // --- 戦闘機と機関砲 ---
+  GUN_PENALTY: 3,            // 機関砲に当たったときに足される秒数
+  GUN_SPEED_RATE: 0.3,       // 当たったあとの速さの割合（0.3 = 30%まで落ちる）
+  GUN_HIT_SIZE: 2.2,         // 弾の当たり判定の大きさ（大きいほど当たりやすい）
+  INVINCIBLE_TIME: 1.5,      // 当たったあと、次に当たらない時間（秒）。機体が点滅する
+  FIGHTER_START_TIME: 4,     // 発進してから、最初の戦闘機が来るまでの秒数
+  FIGHTER_DISTANCE: 650,     // 戦闘機があらわれる場所（自分の前方どれくらい先か）
+  BULLET_LIFE: 4,            // 弾が消えるまでの秒数
+
+  // --- ミサイル ---
+  MISSILE_BONUS: 1,          // ミサイルを撃ち落としたときに減る秒数
+  MISSILE_SHOOT_SIZE: 4,     // 自分の弾がミサイルに当たる判定の大きさ（大きいほど撃ち落としやすい）
+  MISSILE_HIT_SIZE: 2.6,     // ミサイルが自分に当たる判定の大きさ（当たると減速＋GUN_PENALTY秒）
+  MISSILE_START_TIME: 7,     // 発進してから、最初のミサイルが来るまでの秒数
+  MISSILE_DISTANCE: 600,     // ミサイルがあらわれる場所（自分の前方どれくらい先か）
+  MISSILE_LIFE: 12,          // ミサイルが消えるまでの秒数
+
+  // --- 自分の機関砲 ---
+  SHOOTDOWN_BONUS: 3,        // 戦闘機を撃墜したときに減る秒数
+  FIGHTER_HP: 1,             // 戦闘機を撃墜するのに必要な命中数（1 = 1発で撃墜）
+  FIGHTER_HIT_SIZE: 5,       // 戦闘機の当たり判定の大きさ（大きいほど当てやすい）
+  PLAYER_FIRE_INTERVAL: 0.1, // 連射の間隔（秒）
+  PLAYER_BULLET_SPEED: 320,  // 自分の弾の速さ（機体の速さに上乗せ）
+  PLAYER_BULLET_LIFE: 1.6,   // 自分の弾が消えるまでの秒数（長いほど遠くまで届く）
+
+  // --- 天気（コースの 1/3 ごとに 晴れ → 小雨 → 嵐 に変わる） ---
+  WEATHER_CHANGE_TIME: 4,    // 天気が切りかわるのにかかる秒数
+  CONTROL_SUNNY: 12,         // 晴れのときの操作の反応のよさ（大きいほどキビキビ）
+  CONTROL_RAIN: 4.5,         // 小雨のときの操作の反応（小さいほど重く、すべる感じ）
+  CONTROL_STORM: 3.5,        // 嵐のときの操作の反応
+  WIND_STRENGTH: 7,          // 嵐の風で上下にあおられる強さ（いつも吹いている風）
+  WIND_GUST: 9,              // 突風の強さ（ときどき来る強い風）
+  WIND_SIDE: 4,              // 嵐の風で左右に流される強さ
+  STORM_WAVE_HEIGHT: 6,      // 上級の嵐の荒波の高さ（大きいほど波が高い）
+  RAIN_VOLUME: 0.12,         // 雨の音の大きさ（0〜1）
+  BGM_VOLUME: 2.0,           // BGMの大きさ（1より大きくしてもOK）
+  BGM_MELODY_BOOST: 2.0,     // BGMのメロディ・和音だけをさらに大きくする倍率（ドラムに負けないように）
+  THUNDER_VOLUME: 2.2,       // 雷の音の大きさ（1より大きくしてもOK）
+  STORM_GATE_GLOW: 1.0,      // 嵐のときにゲートが光る強さ（0で光らない。大きいほど明るい）
+  PINCH_TEMPO_UP: 0.1,       // ピンチのとき BGM のテンポが速くなる割合（0.1 = 10%速くなる）
+  PINCH_MISSILE_DISTANCE: 230, // ミサイルがこの距離より近づくとピンチの音楽になる
+
+  // --- パーフェクト ---
+  PERFECT_RATE: 0.35,        // 輪の半径のこの割合より内側を通るとパーフェクト（大きいほど簡単）
+  PERFECT_BONUS: 1,          // パーフェクトのときに減る秒数
+
+  // --- 失敗（ゲームオーバー）の範囲 ---
+  GROUND_LIMIT_Y: 2,         // この高さより下に行ったら墜落
+  CEILING_Y: 220,            // この高さより上に行ったらエリア外
+  AREA_LIMIT_X: 260,         // 左右にこれ以上離れたらエリア外
+  BACK_LIMIT_Z: 150,         // 後ろ（空母の後ろ）に戻りすぎたらエリア外
+
+  // --- ランク（秒） ---
+  RANK_S: 90,                // 1分30秒以内
+  RANK_A: 120,               // 2分以内
+  RANK_B: 180,               // 3分以内（それより遅いとC）
+
+  // --- そのほか ---
+  CAMERA_DISTANCE: 18,       // カメラが機体の後ろにどれだけ離れるか
+  CAMERA_HEIGHT: 5,          // カメラの高さ
+  NORMAL_FOV: 65,            // ふだんの視野の広さ（角度）
+  BOOST_FOV: 80,             // ブースト中の視野の広さ（広いほどスピード感が出る）
+  TRAIL_LENGTH: 70,          // 飛行機雲の長さ（コマ数）
+  TRAIL_WIDTH: 0.35,         // 飛行機雲の太さ
+  GOAL_SHOW_TIME: 3,         // ゴールの旗ふりを見せる秒数
+  RANKING_SIZE: 5,           // ランキングに残す数
+  RANKING_KEY: 'jetGateLinerRanking', // ランキングを保存する名前
+
+  // --- 音 ---
+  SOUND_ON: true,            // false にすると最初から音なし（ゲーム中は M キーで切りかえ）
+  MASTER_VOLUME: 0.35,       // 全体の音の大きさ（0〜1）
+  ENGINE_VOLUME: 0.22,       // 飛んでいるときの音の大きさ（0〜1）
+  PLAYER_GUN_VOLUME: 0.9     // 自分の機関砲の発射音の大きさ（0〜1）
+};
+
+// =====================================================================
+// 1-2. 難易度ごとの設定（初級・上級）
+// =====================================================================
+const DIFFICULTY = {
+  easy: {
+    name: '初級',
+    gateRadius: 16,     // ゲートの輪の大きさ（半径）
+    gateSpacing: 172.5, // ゲートとゲートの前後の間隔（もとの115の1.5倍）
+    baseSpeed: 42,      // ふだんの速さ
+    boostSpeed: 66,     // スペースを押している間の速さ
+    turnSpeed: 1.2,     // 左右に曲がる速さ
+    obstacles: 0,       // じゃまをする気球の数
+    obstacleMove: 0,    // 気球が動くはば
+    fighterInterval: 3, // 戦闘機があらわれる間隔（秒）
+    maxFighters: 5,     // 同時にあらわれる戦闘機の数（最大）
+    fighterSpeed: 40,   // 戦闘機の速さ
+    fireRange: 380,     // この距離より近づくと撃ってくる
+    fireInterval: 1.6,  // 連射と連射の間の時間（秒）
+    burst: 9,           // 1回の連射で撃つ弾の数
+    bulletSpeed: 85,    // 弾の速さ
+    aimSpread: 7,       // ねらいのずれ（大きいほど当たりにくい）
+    missileInterval: 3, // ミサイルが飛んでくる間隔（秒）
+    missileSalvo: 9,    // 1回に撃ってくるミサイルの数
+    maxMissiles: 20,    // 同時に飛んでいられるミサイルの数（最大）
+    missileSpeed: 60,   // ミサイルの速さ
+    missileTurn: 0.5    // ミサイルが自分を追いかけて曲がる強さ（大きいほどしつこい）
+  },
+  hard: {
+    name: '上級',
+    gateRadius: 12,
+    gateSpacing: 182,   // もとの140の1.3倍
+    baseSpeed: 55,
+    boostSpeed: 85,
+    turnSpeed: 1.3,
+    obstacles: 20,
+    obstacleMove: 25,
+    fighterInterval: 2,
+    maxFighters: 6,
+    fighterSpeed: 55,
+    fireRange: 480,
+    fireInterval: 0.9,
+    burst: 10,
+    bulletSpeed: 115,
+    aimSpread: 4,
+    missileInterval: 2,
+    missileSalvo: 10,
+    maxMissiles: 25,
+    missileSpeed: 80,
+    missileTurn: 0.9
+  }
+};
+let levelKey = 'easy';             // いま選んでいる難易度
+let level = DIFFICULTY[levelKey];
+
+// 空母まわりの位置（ふつうは変えなくてOK）
+const DECK_Y = 13;          // 空母の甲板の高さ
+const START_Z = 45;         // 発進前の機体の位置
+const DECK_END_Z = -60;     // 甲板の先端の位置
+
+// =====================================================================
+// 2. 画面の部品をすぐ使えるようにしておく
+// =====================================================================
+const $ = id => document.getElementById(id);
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// three.js が読み込めなかったら、お知らせを出して止める
+if (typeof THREE === 'undefined') {
+  $('loadError').style.display = 'flex';
+  throw new Error('three.js を読み込めませんでした');
+}
+
+// =====================================================================
+// 3. 3Dの基本の準備（描く道具・空間・カメラ・光）
+// =====================================================================
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+$('game').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const SKY_COLOR = 0x9fd8ff;
+scene.background = new THREE.Color(SKY_COLOR);
+scene.fog = new THREE.Fog(SKY_COLOR, 350, 1600);   // 遠くをかすませる
+
+const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.5, 3000);
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x5a8a3a, 0.9); // 空と地面からの光
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);           // 太陽の光
+sun.position.set(200, 400, 100);
+scene.add(sun);
+
+// 色つきの材料をかんたんに作るための関数
+function mat(color, extra) {
+  return new THREE.MeshLambertMaterial(Object.assign({ color: color }, extra || {}));
+}
+// 箱をかんたんに作るための関数
+function box(w, h, d, color, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color));
+  m.position.set(x || 0, y || 0, z || 0);
+  return m;
+}
+// 気球を1つ作る（かざりの気球と、上級のじゃま気球で使う）
+function makeBalloon(material) {
+  const g = new THREE.Group();
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(6, 16, 12), material);
+  ball.scale.y = 1.2;
+  g.add(ball);
+  g.add(box(2.5, 2, 2.5, 0x8d5a2b, 0, -9.5, 0));   // かご
+  return g;
+}
+// 白黒チェック模様（ゴールの旗用）の絵を作る
+function makeCheckerTexture(cols, rows) {
+  const c = document.createElement('canvas');
+  c.width = cols * 16; c.height = rows * 16;
+  const g = c.getContext('2d');
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    g.fillStyle = (x + y) % 2 ? '#111' : '#fff';
+    g.fillRect(x * 16, y * 16, 16, 16);
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+// =====================================================================
+// 4. 動かない景色（海・地面・木・山・気球・空母）を作る
+// =====================================================================
+const balloons = []; // ふわふわ動かす気球を入れておく
+const landGroup = new THREE.Group();   // 初級の陸の景色
+const oceanGroup = new THREE.Group();  // 上級の海の景色
+let oceanTexture = null;               // 上級の海の波もよう（動かす）
+let foamMat = null;                    // 上級の白い波しぶきの材料（嵐で濃くなる）
+let oceanScroll = 0;                   // 波もようが流れた量
+
+// 上級の景色：見わたすかぎりの海（波もよう・白い波しぶき・遠くの小さな岩の島）
+function buildOcean() {
+  // 波もようの絵を作る
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1f6fb0';
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 260; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256, w = rand(10, 40);
+    g.strokeStyle = Math.random() < 0.5 ? 'rgba(120,190,240,0.5)' : 'rgba(15,70,130,0.6)';
+    g.lineWidth = rand(1, 3);
+    g.beginPath();
+    g.moveTo(x, y);
+    g.quadraticCurveTo(x + w / 2, y - rand(2, 5), x + w, y);
+    g.stroke();
+  }
+  oceanTexture = new THREE.CanvasTexture(c);
+  oceanTexture.wrapS = oceanTexture.wrapT = THREE.RepeatWrapping;
+  oceanTexture.repeat.set(30, 190);
+  const ocean = new THREE.Mesh(new THREE.PlaneGeometry(2400, 11400),
+    new THREE.MeshPhongMaterial({ color: 0xffffff, map: oceanTexture, shininess: 80, specular: 0x88aacc }));
+  ocean.rotation.x = -Math.PI / 2;
+  ocean.position.set(0, 0, -4700);   // 空母のうしろから、ゴールのずっと先まで
+  oceanGroup.add(ocean);
+
+  // 白い波しぶき（スピード感が出るように、たくさん散らばらせる）
+  const FOAM_N = 1400;
+  foamMat = new THREE.MeshBasicMaterial({ color: 0xe8f6ff, transparent: true, opacity: 0.55 });
+  const foamGeo = new THREE.CircleGeometry(1, 8);
+  foamGeo.rotateX(-Math.PI / 2);
+  const foam = new THREE.InstancedMesh(foamGeo,
+    foamMat, FOAM_N);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
+  for (let i = 0; i < FOAM_N; i++) {
+    p.set(rand(-600, 600), 0.1, rand(-9800, 200));
+    sc.set(rand(3, 9), 1, rand(1, 2.5));
+    m4.compose(p, q, sc);
+    foam.setMatrixAt(i, m4);
+  }
+  oceanGroup.add(foam);
+
+  // 遠くに見える小さな岩の島（コースの外側だけ。上を飛ぶことはない）
+  for (let i = 0; i < 18; i++) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const h = rand(25, 70);
+    const rock = new THREE.Mesh(new THREE.ConeGeometry(rand(25, 55), h, 6), mat(0x6d6258, { flatShading: true }));
+    rock.position.set(side * rand(450, 900), h / 2 - 6, rand(-9500, -400));
+    oceanGroup.add(rock);
+  }
+  oceanGroup.visible = false;
+  scene.add(oceanGroup);
+}
+
+// 難易度に合わせて景色を切りかえる（初級＝陸の上、上級＝ずっと海の上）
+function setWorld(k) {
+  landGroup.visible = k !== 'hard';
+  oceanGroup.visible = k === 'hard';
+}
+// 気球の色（かざりの気球も、上級のじゃま気球も、この色を使う）
+const balloonColors = [0xffb300, 0x8e6e9e, 0xf5f5f5, 0x7fb3ff, 0xff7043];
+
+function buildWorld() {
+  scene.add(landGroup);   // 陸の景色（砂浜・草原・木・丘・岩山）は、まとめて landGroup に入れる
+  // 海（空母のまわり）
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1000), mat(0x2f7fc1));
+  sea.rotation.x = -Math.PI / 2;
+  sea.position.set(0, 0, 300);
+  landGroup.add(sea);   // 上級では、もっと広い海（oceanGroup）にかわる
+
+  // 砂浜
+  const beach = new THREE.Mesh(new THREE.PlaneGeometry(1600, 30), mat(0xe8d39a));
+  beach.rotation.x = -Math.PI / 2;
+  beach.position.set(0, 0.03, -205);
+  landGroup.add(beach);
+
+  // 草原（コースの下）
+  const land = new THREE.Mesh(new THREE.PlaneGeometry(1600, 9500), mat(0x5cbf3a));
+  land.rotation.x = -Math.PI / 2;
+  land.position.set(0, 0.05, -220 - 4750);
+  landGroup.add(land);
+
+  // 土がむき出しの茶色い場所
+  for (let i = 0; i < 60; i++) {
+    const patch = new THREE.Mesh(new THREE.CircleGeometry(rand(15, 45), 12), mat(0xc9a36b));
+    patch.rotation.x = -Math.PI / 2;
+    patch.position.set(rand(-400, 400), 0.1, rand(-9300, -260));
+    patch.scale.y = rand(0.5, 1);
+    landGroup.add(patch);
+  }
+
+  // 木（たくさんあるので InstancedMesh というまとめて描く方法を使う）
+  const TREE_N = 1100;
+  const leafGeo = new THREE.ConeGeometry(4, 12, 7); leafGeo.translate(0, 8, 0);
+  const trunkGeo = new THREE.CylinderGeometry(0.8, 1, 3, 6); trunkGeo.translate(0, 1.5, 0);
+  const leaves = new THREE.InstancedMesh(leafGeo, mat(0xffffff), TREE_N);
+  const trunks = new THREE.InstancedMesh(trunkGeo, mat(0x7a4a26), TREE_N);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  const col = new THREE.Color();
+  for (let i = 0; i < TREE_N; i++) {
+    p.set(rand(-500, 500), 0, rand(-9500, -235));
+    const k = rand(0.7, 1.6);
+    s.set(k, k, k);
+    m4.compose(p, q, s);
+    leaves.setMatrixAt(i, m4);
+    trunks.setMatrixAt(i, m4);
+    col.setHSL(0.28 + rand(-0.04, 0.04), 0.6, rand(0.22, 0.38));
+    leaves.setColorAt(i, col);
+  }
+  leaves.instanceColor.needsUpdate = true;
+  landGroup.add(leaves, trunks);
+
+  // 丘（コースの外側）
+  for (let i = 0; i < 45; i++) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const hill = new THREE.Mesh(new THREE.SphereGeometry(rand(60, 120), 12, 8), mat(0x6fbf45));
+    hill.scale.y = 0.35;
+    hill.position.set(side * rand(320, 650), 0, rand(-9300, -250));
+    landGroup.add(hill);
+  }
+  // 岩山
+  for (let i = 0; i < 38; i++) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const h = rand(100, 240);
+    const mt = new THREE.Mesh(new THREE.ConeGeometry(rand(70, 130), h, 6), mat(0xa9805a, { flatShading: true }));
+    mt.position.set(side * rand(380, 800), h / 2 - 5, rand(-9500, -300));
+    landGroup.add(mt);
+  }
+
+  // 気球（かざり。ぶつかっても大丈夫）
+  for (let i = 0; i < 24; i++) {
+    const g = makeBalloon(mat(balloonColors[i % balloonColors.length]));
+    const side = Math.random() < 0.5 ? -1 : 1;
+    g.position.set(side * rand(70, 240), rand(70, 170), rand(-7500, -300));
+    g.userData.baseY = g.position.y;
+    g.userData.phase = rand(0, 6);
+    scene.add(g);
+    balloons.push(g);
+  }
+
+  // 空母
+  const carrier = new THREE.Group();
+  carrier.add(box(30, 12, 120, 0x6b7280, 0, 6, 0));             // 船体
+  carrier.add(box(34, 1, 124, 0x3f4650, 0, 12.5, 0));           // 甲板
+  carrier.add(box(0.8, 0.05, 110, 0xffd54f, 0, 13.03, 0));      // カタパルトの黄色い線
+  carrier.add(box(0.4, 0.05, 120, 0xffffff, -15, 13.03, 0));    // 白線
+  carrier.add(box(0.4, 0.05, 120, 0xffffff, 15, 13.03, 0));
+  carrier.add(box(6, 14, 20, 0x8a919c, 13, 20, 15));            // 艦橋（タワー）
+  carrier.add(box(3, 4, 3, 0x555555, 13, 29, 15));
+  scene.add(carrier);
+}
+
+// =====================================================================
+// 5. エアレース機の模型を作る（流線型ボディ＋オレンジ×白のレースカラー）
+//    機体の前は -z 方向。翼の端から端まで約11
+// =====================================================================
+// 機体の塗装（形は初級も上級も同じ。色とマークだけちがう）
+const PLANE_THEMES = {
+  easy: {                       // 初級：オレンジ×白のレースカラー
+    main: 0xff5a14,             // メインカラー（胴体の上・翼端・尾翼）
+    sub: 0xf7f7f2,              // サブカラー（胴体の下・翼）
+    dark: 0x222831,             // ふちどり・金属部分
+    canopy: 0x17263f,           // 操縦席の窓
+    number: '30', numberFill: '#ffffff', numberStroke: '#1b1f27',
+    flame: 0xff8a1f, core: 0xfff3c4   // ジェットの炎（オレンジ）
+  },
+  hard: {                       // 上級：ブラック×ゴールド×レッドの精鋭カラー
+    main: 0x15181f,
+    sub: 0xd4af37,
+    dark: 0xd32f2f,
+    canopy: 0x3a2a08,
+    number: '01', numberFill: '#f5d36b', numberStroke: '#000000',
+    flame: 0x3fb4ff, core: 0xe6f7ff   // アフターバーナーの青い炎
+  }
+};
+
+// つやのある材料（光が反射してピカッと光る）
+function shiny(color, extra) {
+  return new THREE.MeshPhongMaterial(Object.assign({ color: color, shininess: 90, specular: 0x777777 }, extra || {}));
+}
+
+// 平らな部品（翼など）を作る関数
+// points は [左右の位置, 前後の位置（前がプラス）] の並び。厚みをつけて寝かせる
+function wingPart(points, thickness, material) {
+  const shape = new THREE.Shape();
+  shape.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) shape.lineTo(points[i][0], points[i][1]);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness, bevelEnabled: true,
+    bevelThickness: thickness * 0.4, bevelSize: thickness * 0.4, bevelSegments: 2
+  });
+  geo.translate(0, 0, -thickness / 2);
+  geo.rotateX(-Math.PI / 2);   // 寝かせる（前が -z 方向になる）
+  return new THREE.Mesh(geo, material);
+}
+
+// 立っている部品（垂直尾翼など）を作る関数
+// points は [前後の位置（前がプラス）, 高さ] の並び
+function finPart(points, thickness, material) {
+  const shape = new THREE.Shape();
+  shape.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) shape.lineTo(points[i][0], points[i][1]);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness, bevelEnabled: true,
+    bevelThickness: thickness * 0.4, bevelSize: thickness * 0.4, bevelSegments: 2
+  });
+  geo.translate(0, 0, -thickness / 2);
+  geo.rotateY(Math.PI / 2);    // 縦に立てる（前が -z 方向になる）
+  return new THREE.Mesh(geo, material);
+}
+
+// 左右対称の部品を作る（右側の形を書けば、左側は自動で作る）
+function mirrorPair(points, thickness, material) {
+  const left = points.map(p => [-p[0], p[1]]);
+  return [wingPart(points, thickness, material), wingPart(left, thickness, material)];
+}
+
+// レースナンバー「30」のステッカーを作る
+function makeNumberDecal(text, fill, stroke) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.font = 'italic 900 110px Arial, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 14; g.strokeStyle = stroke;
+  g.strokeText(text, 128, 68);
+  g.fillStyle = fill;
+  g.fillText(text, 128, 68);
+  return new THREE.MeshBasicMaterial({
+    map: new THREE.CanvasTexture(c), transparent: true,
+    polygonOffset: true, polygonOffsetFactor: -2   // 機体に埋もれないように少し手前に描く
+  });
+}
+
+function buildPlane(theme) {
+  const g = new THREE.Group();
+  const orange = shiny(theme.main);     // 名前は orange だが、テーマのメインカラーが入る
+  const white = shiny(theme.sub);       // テーマのサブカラー
+  const dark = shiny(theme.dark, { shininess: 120 });
+
+  // --- 胴体：しずくのような流線型（断面の形をくるっと回して作る） ---
+  // [半径, 前後の位置] 後ろ（ノズル）から前（機首）へ
+  const profile = [[0.28, -4.2], [0.45, -3.7], [0.62, -2.6], [0.8, -1.0], [0.88, 0.4],
+                   [0.86, 1.8], [0.72, 3.1], [0.48, 4.2], [0.2, 4.95], [0, 5.15]]
+    .map(p => new THREE.Vector2(p[0], p[1]));
+  // 上半分はオレンジ、下半分は白に塗り分ける
+  const topGeo = new THREE.LatheGeometry(profile, 24, -Math.PI / 2, Math.PI);
+  const bottomGeo = new THREE.LatheGeometry(profile, 24, Math.PI / 2, Math.PI);
+  topGeo.rotateX(-Math.PI / 2);     // 機首を前（-z）に向ける
+  bottomGeo.rotateX(-Math.PI / 2);
+  g.add(new THREE.Mesh(topGeo, orange));
+  g.add(new THREE.Mesh(bottomGeo, white));
+
+  // --- キャノピー（操縦席の透明なふた） ---
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 14),
+    new THREE.MeshPhongMaterial({ color: theme.canopy, shininess: 160, specular: 0xffffff, transparent: true, opacity: 0.9 }));
+  canopy.scale.set(1, 0.78, 2.6);
+  canopy.position.set(0, 0.62, -0.9);
+  g.add(canopy);
+  const frame = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.05, 6, 20, Math.PI), dark); // キャノピーの枠
+  frame.position.set(0, 0.6, -0.4);
+  g.add(frame);
+
+  // --- 主翼：低い位置につけた細長い翼（白）＋ オレンジの翼端 ---
+  const wingY = -0.3, wingZ = 0.2;
+  const wingParts = []
+    .concat(mirrorPair([[0.7, 1.3], [4.6, 0.45], [4.6, -0.5], [0.7, -1.1]], 0.16, white))       // 翼
+    .concat(mirrorPair([[4.6, 0.45], [5.5, 0.22], [5.5, -0.55], [4.6, -0.5]], 0.16, orange))    // 翼端
+    .concat(mirrorPair([[1.0, 0.95], [4.55, 0.2], [4.55, 0.02], [1.0, 0.7]], 0.2, orange))      // 前のふちのライン
+    .concat(mirrorPair([[1.0, -0.6], [4.55, -0.28], [4.55, -0.36], [1.0, -0.72]], 0.2, dark));  // 細い黒ライン
+  wingParts.forEach(w => { w.position.set(0, wingY, wingZ); g.add(w); });
+  // 翼の先の小さな立ち上がり（ウイングレット）
+  for (const side of [-1, 1]) {
+    const wl = finPart([[0.2, 0], [-0.3, 0.7], [-0.7, 0.7], [-0.55, 0]], 0.08, orange);
+    wl.position.set(side * 5.5, wingY, wingZ);
+    g.add(wl);
+  }
+
+  // --- 尾翼：後ろに大きく傾いた垂直尾翼＋上にのせた水平尾翼（T字型） ---
+  const fin = finPart([[-2.4, 0.3], [-3.5, 2.0], [-4.2, 2.0], [-4.05, 0.3]], 0.12, orange);
+  g.add(fin);
+  const finStripe = finPart([[-2.75, 0.9], [-3.25, 1.6], [-3.55, 1.6], [-3.1, 0.9]], 0.16, white);
+  g.add(finStripe);
+  mirrorPair([[0.15, 0.45], [1.9, 0.0], [1.9, -0.42], [0.15, -0.55]], 0.1, orange)
+    .forEach(s => { s.position.set(0, 2.0, 3.75); g.add(s); });
+
+  // --- ジェットの空気取り入れ口（胴体の横） ---
+  for (const side of [-1, 1]) {
+    const intake = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 1.4, 12), dark);
+    intake.rotation.x = Math.PI / 2;
+    intake.position.set(side * 0.74, -0.15, 1.6);
+    g.add(intake);
+  }
+
+  // --- レースナンバー（胴体の左右） ---
+  const numMat = makeNumberDecal(theme.number, theme.numberFill, theme.numberStroke);
+  for (const side of [-1, 1]) {
+    const decal = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.65), numMat);
+    decal.position.set(side * 0.9, 0.25, 0.15);
+    decal.rotation.y = side * Math.PI / 2;
+    g.add(decal);
+  }
+
+  // --- ジェットノズルと炎 ---
+  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.32, 0.8, 16, 1, true), dark);
+  nozzle.rotation.x = Math.PI / 2;
+  nozzle.position.z = 4.35;
+  g.add(nozzle);
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.34, 2.4, 12),
+    new THREE.MeshBasicMaterial({ color: theme.flame, transparent: true, opacity: 0.85 }));
+  flame.geometry.translate(0, 1.2, 0);    // 太いつけ根を中心にして、のびても位置がずれないように
+  flame.rotation.x = Math.PI / 2;          // 炎の先を後ろ（+z）に向ける
+  flame.position.z = 4.7;
+  g.add(flame);
+  const core = new THREE.Mesh(new THREE.ConeGeometry(0.18, 1.2, 10),
+    new THREE.MeshBasicMaterial({ color: theme.core }));
+  core.geometry.translate(0, 0.6, 0);
+  core.rotation.x = Math.PI / 2;
+  core.position.z = 4.7;
+  g.add(core);
+  g.userData.flame = flame;
+  g.userData.core = core;
+
+  g.rotation.order = 'YXZ';  // 回転の順番：左右 → 上下 → かたむき
+  scene.add(g);
+  return g;
+}
+
+// =====================================================================
+// 5-2. 翼の端から出る白い飛行機雲（スピード感の演出）
+// =====================================================================
+function makeTrail() {
+  const n = CONFIG.TRAIL_LENGTH;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+  const index = [];
+  for (let i = 0; i < n - 1; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    index.push(a, b, c, b, d, c);
+  }
+  geo.setIndex(index);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false
+  }));
+  mesh.frustumCulled = false;
+  mesh.userData.points = [];   // これまでの翼端の位置の記録
+  scene.add(mesh);
+  return mesh;
+}
+const trails = [makeTrail(), makeTrail()];
+const TRAIL_TIPS = [new THREE.Vector3(-5.5, -0.3, 0.3), new THREE.Vector3(5.5, -0.3, 0.3)];
+
+function clearTrails() {
+  trails.forEach(t => { t.userData.points = []; t.visible = false; });
+}
+
+function updateTrails() {
+  const flying = phase === 'fly' || phase === 'goal';
+  if (!flying) { clearTrails(); return; }
+  planeMesh.updateMatrixWorld();
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(planeMesh.quaternion);
+  trails.forEach((t, k) => {
+    const pts = t.userData.points;
+    pts.unshift(planeMesh.localToWorld(TRAIL_TIPS[k].clone()));   // 新しい位置を先頭に追加
+    if (pts.length > CONFIG.TRAIL_LENGTH) pts.pop();               // 古いものは消す
+    const arr = t.geometry.attributes.position.array;
+    for (let i = 0; i < CONFIG.TRAIL_LENGTH; i++) {
+      const p = pts[Math.min(i, pts.length - 1)];
+      const w = CONFIG.TRAIL_WIDTH * (1 - i / CONFIG.TRAIL_LENGTH);  // 後ろほど細くして消えていく感じに
+      arr[i * 6]     = p.x;            arr[i * 6 + 1] = p.y;            arr[i * 6 + 2] = p.z;
+      arr[i * 6 + 3] = p.x + up.x * w; arr[i * 6 + 4] = p.y + up.y * w; arr[i * 6 + 5] = p.z + up.z * w;
+    }
+    t.geometry.attributes.position.needsUpdate = true;
+    t.visible = true;
+  });
+}
+
+// =====================================================================
+// 6. ゴールで旗をふるキャラクターを作る（黄色い鳥のキャラクター）
+//    うでが無いので、長いしっぽの先にチェッカーフラッグをつけて、しっぽでふる
+//    キャラクターは +z 方向（飛んでくる機体のほう）を向いている
+// =====================================================================
+const BIRD_YELLOW = 0xf6dc3a;  // 体
+const BIRD_OLIVE  = 0x8f9d1e;  // くちばし・しっぽ・頭の葉っぱ
+const BIRD_BLUE   = 0x3aa9cf;  // 足
+const BIRD_LINE   = 0x2a2a2a;  // ふちどりの線
+
+// アニメ調の色（影が2段階になる材料）
+function toon(color) {
+  return new THREE.MeshToonMaterial({ color: color });
+}
+// 黒いふちどりをつける（ひと回り大きい裏返しの形を重ねるテクニック）
+const outlineMat = new THREE.MeshBasicMaterial({ color: BIRD_LINE, side: THREE.BackSide });
+function addOutline(mesh, size) {
+  const line = new THREE.Mesh(mesh.geometry, outlineMat);
+  line.scale.setScalar(size || 1.07);
+  mesh.add(line);
+  return mesh;
+}
+// 細長いもの（足・しっぽ）を、点をなめらかにつないで作る
+function tube(points, radius, color) {
+  const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, radius, 8, false), toon(color)));
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 24, radius * 1.45, 8, false), outlineMat)); // ふちどり
+  return g;
+}
+
+function buildFlagger() {
+  const g = new THREE.Group();
+  const bird = new THREE.Group();   // はねる動きのために、体全体をひとまとめにする
+  g.add(bird);
+
+  // --- 体：少し四角っぽい、たまご形の黄色い体 ---
+  const body = addOutline(new THREE.Mesh(new THREE.SphereGeometry(1.3, 28, 20), toon(BIRD_YELLOW)), 1.05);
+  body.scale.set(1.0, 1.2, 0.85);
+  body.position.y = 3.7;
+  bird.add(body);
+
+  // --- 目：大きな白い目と黒い瞳 ---
+  for (const ex of [-0.48, 0.5]) {
+    const eye = addOutline(new THREE.Mesh(new THREE.SphereGeometry(0.4, 18, 14), toon(0xffffff)), 1.12);
+    eye.scale.set(1, 1.05, 0.6);
+    eye.position.set(ex, 4.35, 0.98);
+    bird.add(eye);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 10), new THREE.MeshBasicMaterial({ color: 0x111111 }));
+    pupil.position.set(ex + 0.02, 4.33, 1.24);
+    bird.add(pupil);
+  }
+
+  // --- くちばし：平たくて前につき出たオリーブ色のくちばし ---
+  const beak = addOutline(new THREE.Mesh(new THREE.SphereGeometry(1, 24, 14), toon(BIRD_OLIVE)), 1.06);
+  beak.scale.set(1.05, 0.26, 0.75);
+  beak.position.set(-0.35, 3.55, 1.25);
+  bird.add(beak);
+  const beakTop = addOutline(new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), toon(BIRD_OLIVE)), 1.1);
+  beakTop.scale.set(1, 0.9, 0.9);
+  beakTop.position.set(-0.05, 3.75, 1.05);
+  bird.add(beakTop);
+
+  // --- 頭の上の小さな葉っぱ ---
+  const sprout = addOutline(new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.75, 4), toon(BIRD_OLIVE)), 1.15);
+  sprout.position.set(0.05, 5.55, 0);
+  sprout.rotation.z = -0.15;
+  bird.add(sprout);
+
+  // --- 足：細長い水色の足と、3本指の足先 ---
+  for (const side of [-1, 1]) {
+    const lx = side * 0.42;
+    bird.add(tube([[lx, 2.6, 0.1], [lx + side * 0.05, 1.3, 0.12], [lx + side * 0.12, 0.15, 0.15]], 0.09, BIRD_BLUE));
+    const fx = lx + side * 0.12;
+    for (const a of [-0.6, 0, 0.6]) {   // 3本の指を前に広げる
+      bird.add(tube([[fx, 0.15, 0.15], [fx + Math.sin(a) * 0.45, 0.05, 0.15 + Math.cos(a) * 0.45]], 0.07, BIRD_BLUE));
+    }
+  }
+
+  // --- しっぽ：体の後ろから右上へ長くのびる。先にチェッカーフラッグ ---
+  const tailPivot = new THREE.Group();     // しっぽのつけ根（ここを中心にふる）
+  tailPivot.position.set(0.7, 3.0, -0.75);
+  tailPivot.add(tube([[0, 0, 0], [0.7, 0.35, -0.15], [1.35, 1.4, -0.25], [1.75, 2.9, -0.25], [2.0, 4.3, -0.2]], 0.16, BIRD_OLIVE));
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.5),
+    new THREE.MeshLambertMaterial({ map: makeCheckerTexture(6, 4), side: THREE.DoubleSide }));
+  flag.position.set(3.1, 3.7, -0.2);       // しっぽの先から右側に旗がのびる
+  tailPivot.add(flag);
+  bird.add(tailPivot);
+
+  g.userData.tail = tailPivot;
+  g.userData.bird = bird;
+  g.add(box(3.2, 0.6, 3.2, 0xcccccc, 0, -0.3, 0));  // 足場
+  g.scale.setScalar(4);
+  return g;
+}
+
+// =====================================================================
+// 7. コース（ゲート30個・ゴール・旗ふりの鳥）を作る
+//    毎回ランダムに並び直すので、遊ぶたびにコースが変わります
+// =====================================================================
+let courseGroup = null;   // コースの部品をまとめて入れておく箱
+let gates = [];           // ゲートの一覧
+let goalPos = new THREE.Vector3();
+let flagger = null;
+
+// ゲートの形（赤白しましまの輪）は全部同じなので1回だけ作る
+const SEGMENTS = 12;
+let gateSegGeo = null;   // ゲートの輪の形（難易度で大きさが変わるので、コースを作るときに用意する）
+let perfectGeo = null;   // 真ん中のパーフェクトの輪の形
+let hardGlowGeo = null, hardInnerGeo = null, hardBulbGeo = null;   // 上級ゲートの飾りの形
+let gateHaloGeo = null;  // 嵐のときにゲートのまわりで光るわの形
+let obstacles = [];      // 上級のじゃま気球の一覧
+
+function makeGate() {
+  if (levelKey === 'hard') return makeHardGate();
+  const g = new THREE.Group();
+  const red = mat(0xe53935, { transparent: true });
+  const white = mat(0xffffff, { transparent: true });
+  for (let i = 0; i < SEGMENTS; i++) {
+    const seg = new THREE.Mesh(gateSegGeo, i % 2 ? white : red);
+    seg.rotation.z = i * Math.PI * 2 / SEGMENTS;
+    g.add(seg);
+  }
+  // 真ん中の黄色い小さな輪（ここを通るとパーフェクト）
+  const ring = new THREE.Mesh(perfectGeo,
+    new THREE.MeshBasicMaterial({ color: 0xffeb3b, transparent: true, opacity: 0.5 }));
+  g.add(ring);
+  // 嵐のときに光る、まわりの光のわ（ふだんは見えない）
+  const halo = new THREE.Mesh(gateHaloGeo, glowMat(0xff7a40, 0));
+  halo.visible = false;
+  g.add(halo);
+  g.userData = { red: red, white: white, ring: ring, state: 'wait', extras: [halo], glow: [1, 1, 0],
+                 halo: halo, stormRed: [0.9, 0.15, 0.08], stormWhite: [0.75, 0.75, 0.75] };
+  return g;
+}
+
+// 上級のゲート：黒×金のしましまの輪に、青く光る外わくと8つのライト。ゆっくり回る
+function makeHardGate() {
+  const g = new THREE.Group();
+  const red = shiny(0x1c1f26, { transparent: true });     // 黒い部分（名前は red のまま使う）
+  const white = shiny(0xffc107, { transparent: true });   // 金色の部分
+  for (let i = 0; i < SEGMENTS; i++) {
+    const seg = new THREE.Mesh(gateSegGeo, i % 2 ? white : red);
+    seg.rotation.z = i * Math.PI * 2 / SEGMENTS;
+    g.add(seg);
+  }
+  const extras = [];
+  const outer = new THREE.Mesh(hardGlowGeo, glowMat(0x29e0ff, 0.85));   // 青く光る外わく
+  g.add(outer); extras.push(outer);
+  const inner = new THREE.Mesh(hardInnerGeo, glowMat(0x29e0ff, 0.5));   // 内側の細い光
+  g.add(inner); extras.push(inner);
+  for (let i = 0; i < 8; i++) {                                            // 8つのライト
+    const a = i * Math.PI / 4 + Math.PI / 8;
+    const bulb = new THREE.Mesh(hardBulbGeo, glowMat(0xffffff, 1));
+    bulb.position.set(Math.cos(a) * (level.gateRadius + 1.6), Math.sin(a) * (level.gateRadius + 1.6), 0);
+    g.add(bulb); extras.push(bulb);
+  }
+  // 真ん中のマゼンタ（赤むらさき）の小さな輪（ここを通るとパーフェクト）
+  const ring = new THREE.Mesh(perfectGeo,
+    new THREE.MeshBasicMaterial({ color: 0xff3df5, transparent: true, opacity: 0.6 }));
+  g.add(ring);
+  const halo = new THREE.Mesh(gateHaloGeo, glowMat(0x29e0ff, 0));
+  halo.visible = false;
+  g.add(halo); extras.push(halo);
+  g.userData = { red: red, white: white, ring: ring, state: 'wait', extras: extras, glow: [0, 0.9, 1], spin: true,
+                 halo: halo, outer: outer, bulbs: extras.slice(2, 10), stormRed: [0, 0.35, 0.5], stormWhite: [0.85, 0.6, 0.1] };
+  return g;
+}
+
+function buildCourse() {
+  if (courseGroup) scene.remove(courseGroup);  // 前のコースを片づける
+  courseGroup = new THREE.Group();
+  gates = [];
+
+  // 選んだ難易度に合わせて、ゲートの大きさを決める
+  if (gateSegGeo) { gateSegGeo.dispose(); perfectGeo.dispose(); }
+  gateSegGeo = new THREE.TorusGeometry(level.gateRadius, CONFIG.GATE_TUBE, 8, 4, Math.PI * 2 / SEGMENTS);
+  perfectGeo = new THREE.TorusGeometry(level.gateRadius * CONFIG.PERFECT_RATE, 0.25, 6, 32);
+  hardGlowGeo = new THREE.TorusGeometry(level.gateRadius + 1.6, 0.3, 6, 64);   // 上級ゲートの光るわく
+  hardInnerGeo = new THREE.TorusGeometry(level.gateRadius - 1.6, 0.12, 6, 64);
+  hardBulbGeo = new THREE.SphereGeometry(0.55, 8, 6);
+  gateHaloGeo = new THREE.TorusGeometry(level.gateRadius, CONFIG.GATE_TUBE * 2.4, 8, 48);   // 嵐で光るわ
+
+  // ゲートを前に向かって1つずつ置いていく（前のゲートから少しずつずらす）
+  let x = 0, y = 30;
+  for (let i = 0; i < CONFIG.GATE_COUNT; i++) {
+    const z = DECK_END_Z - CONFIG.FIRST_GATE_DISTANCE - i * level.gateSpacing;
+    x = clamp(x + rand(-CONFIG.GATE_SHIFT_X, CONFIG.GATE_SHIFT_X), -CONFIG.GATE_LIMIT_X, CONFIG.GATE_LIMIT_X);
+    y = clamp(y + rand(-CONFIG.GATE_SHIFT_Y, CONFIG.GATE_SHIFT_Y), CONFIG.GATE_MIN_Y, CONFIG.GATE_MAX_Y);
+    if (i === 0) y = clamp(y, CONFIG.GATE_MIN_Y, 35); // 1個目は低めにして入りやすく
+    const gate = makeGate();
+    gate.position.set(x, y, z);
+    courseGroup.add(gate);
+    gates.push(gate);
+  }
+
+  // ゴール（最後のゲートの先）
+  const last = gates[gates.length - 1].position;
+  goalPos.set(last.x, 0, last.z - CONFIG.GOAL_DISTANCE);
+  const goal = new THREE.Group();
+  goal.position.copy(goalPos);
+  const poleMat = mat(0xffffff);
+  for (const px of [-45, 45]) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 54, 10), poleMat);
+    pole.position.set(px, 27, 0);
+    goal.add(pole);
+  }
+  // 「GOAL」の看板
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 64;
+  const ctx = c.getContext('2d');
+  for (let i = 0; i < 32; i++) for (let j = 0; j < 4; j++) {
+    ctx.fillStyle = (i + j) % 2 ? '#111' : '#fff';
+    ctx.fillRect(i * 16, j * 16, 16, 16);
+  }
+  ctx.fillStyle = '#e53935'; ctx.fillRect(176, 4, 160, 56);
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 48px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('GOAL', 256, 50);
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(92, 11.5),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), side: THREE.DoubleSide }));
+  banner.position.set(0, 50, 0);
+  goal.add(banner);
+  // 地面のゴールライン
+  const line = new THREE.Mesh(new THREE.PlaneGeometry(90, 8),
+    new THREE.MeshBasicMaterial({ map: makeCheckerTexture(22, 2) }));
+  line.rotation.x = -Math.PI / 2;
+  line.position.y = 0.2;
+  goal.add(line);
+  courseGroup.add(goal);
+
+  // 旗ふりキャラ（ゴールの右どなり）
+  flagger = buildFlagger();
+  flagger.position.set(goalPos.x + 58, 1.2, goalPos.z + 10);
+  courseGroup.add(flagger);
+  if (levelKey === 'hard') {             // 上級は海の上なので、うき台を置く
+    const raft = new THREE.Mesh(new THREE.CylinderGeometry(9, 10, 2.4, 20), mat(0xff7043));
+    raft.position.set(flagger.position.x, 0.2, flagger.position.z);
+    courseGroup.add(raft);
+    const ringFloat = new THREE.Mesh(new THREE.TorusGeometry(10, 0.9, 8, 24), mat(0xffffff));
+    ringFloat.rotation.x = Math.PI / 2;
+    ringFloat.position.set(flagger.position.x, 0.4, flagger.position.z);
+    courseGroup.add(ringFloat);
+  }
+
+  // 上級：ゲートとゲートの間に、動くじゃま気球を置く
+  obstacles = [];
+  const spots = [];
+  for (let k = 1; k < gates.length; k++) spots.push(k);
+  spots.sort(() => Math.random() - 0.5);           // 置く場所をシャッフル
+  const n = Math.min(level.obstacles, spots.length);
+  for (let i = 0; i < n; i++) {
+    const a = gates[spots[i] - 1].position, b = gates[spots[i]].position;
+    const o = makeBalloon(mat(balloonColors[i % balloonColors.length]));   // かざりの気球と同じ色
+    o.userData.base = new THREE.Vector3((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+    o.userData.phase = rand(0, Math.PI * 2);
+    o.userData.speed = rand(0.6, 1.2);
+    o.userData.alive = true;
+    o.position.copy(o.userData.base);
+    courseGroup.add(o);
+    obstacles.push(o);
+  }
+
+  scene.add(courseGroup);
+}
+
+// =====================================================================
+// 8. ゲームの状態（いまどの画面か、機体の位置、タイムなど）
+// =====================================================================
+// phase（いまの場面）：title → howto → ready（発進待ち）→ launch（カタパルト）
+//                      → fly（飛行中）→ goal（旗ふり）→ result / gameover
+let phase = 'title';
+let paused = false;
+// 初級用と上級用の機体を1機ずつ作っておき、難易度で切りかえる
+const planeModels = { easy: buildPlane(PLANE_THEMES.easy), hard: buildPlane(PLANE_THEMES.hard) };
+planeModels.hard.visible = false;
+let planeMesh = planeModels.easy;     // いま使っている機体
+function setPlaneModel(k) {
+  planeModels.easy.visible = false;
+  planeModels.hard.visible = false;
+  planeMesh = planeModels[k];
+  planeMesh.visible = true;
+}
+const plane = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, bank: 0, speed: 0 };
+let elapsed = 0;     // 飛んでいる時間（秒）
+let penalty = 0;     // ペナルティの合計（秒）
+let nextGate = 0;    // 次にくぐるゲートの番号
+let passCount = 0, missCount = 0, hitCount = 0;
+let bonus = 0;          // パーフェクトと撃墜で減った秒数の合計
+let perfectCount = 0, balloonHits = 0;
+let goalTimer = 0;
+let finalTime = 0;
+let worldTime = 0;   // アニメーション用の時計
+let snapCamera = true;
+
+// =====================================================================
+// 8-2. 効果音（音のファイルは使わず、ブラウザの機能で音を作る）
+//   ブラウザのきまりで、最初にキーかマウスを押すまでは音が出ません
+// =====================================================================
+const sound = { ctx: null, master: null, noise: null, engineGain: null, engineFilter: null, engineOsc: null,
+                on: CONFIG.SOUND_ON };
+
+// 音の準備（最初にキーやマウスを押したときに1回だけ行う）
+function initSound() {
+  if (sound.ctx) {
+    if (sound.ctx.state === 'suspended') sound.ctx.resume();
+    return;
+  }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;                        // 音が使えないブラウザでは何もしない
+  try {
+    const ctx = new AC();
+    sound.ctx = ctx;
+    sound.master = ctx.createGain();      // 全体の音量つまみ
+    sound.master.gain.value = sound.on ? CONFIG.MASTER_VOLUME : 0;
+    // 音がたくさん重なっても「バリバリ」と割れないように、大きすぎる音をおさえる装置を通す
+    const limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -10;
+    limiter.knee.value = 6;
+    limiter.ratio.value = 8;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.15;
+    sound.master.connect(limiter);
+    limiter.connect(ctx.destination);
+
+    // 「ザー」という雑音のもと（風の音・噴射の音に使う）
+    const len = ctx.sampleRate * 2;
+    sound.noise = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = sound.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+
+    // 飛んでいるときにずっと鳴る音（風を切る音＋低いエンジンのうなり）
+    sound.engineGain = ctx.createGain();
+    sound.engineGain.gain.value = 0;
+    sound.engineGain.connect(sound.master);
+    const wind = ctx.createBufferSource();
+    wind.buffer = sound.noise;
+    wind.loop = true;
+    sound.engineFilter = ctx.createBiquadFilter();
+    sound.engineFilter.type = 'bandpass';
+    sound.engineFilter.Q.value = 0.8;
+    wind.connect(sound.engineFilter);
+    sound.engineFilter.connect(sound.engineGain);
+    wind.start();
+    sound.engineOsc = ctx.createOscillator();
+    sound.engineOsc.type = 'sawtooth';
+    const humFilter = ctx.createBiquadFilter();
+    humFilter.type = 'lowpass';
+    humFilter.frequency.value = 260;
+    const humGain = ctx.createGain();
+    humGain.gain.value = 0.25;
+    sound.engineOsc.connect(humFilter);
+    humFilter.connect(humGain);
+    humGain.connect(sound.engineGain);
+    sound.engineOsc.start();
+
+    // 雨の音（「ザー」という音。天気に合わせて大きさを変える）
+    sound.rainGain = ctx.createGain();
+    sound.rainGain.gain.value = 0;
+    const rain = ctx.createBufferSource();
+    rain.buffer = sound.noise;
+    rain.loop = true;
+    const rainFilter = ctx.createBiquadFilter();
+    rainFilter.type = 'highpass';
+    rainFilter.frequency.value = 1000;
+    rain.connect(rainFilter);
+    rainFilter.connect(sound.rainGain);
+    sound.rainGain.connect(sound.master);
+    rain.start();
+
+    // BGM の音量つまみ
+    sound.bgmGain = ctx.createGain();
+    sound.bgmGain.gain.value = CONFIG.BGM_VOLUME;
+    sound.bgmGain.connect(sound.master);
+  } catch (e) {
+    sound.ctx = null;                     // うまくいかなくてもゲームは続ける
+  }
+}
+
+// 音のオン・オフ（M キー）
+function toggleSound() {
+  sound.on = !sound.on;
+  if (sound.master) sound.master.gain.setTargetAtTime(sound.on ? CONFIG.MASTER_VOLUME : 0, sound.ctx.currentTime, 0.05);
+  showPopup(sound.on ? '音：オン' : '音：オフ', '#ffffff');
+}
+
+// 「ピー」という音を1つ鳴らす（高さ・長さ・音色・大きさを指定。freqEnd を入れると高さが変わる）
+function tone(freq, delay, dur, type, vol, freqEnd) {
+  if (!sound.ctx) return;
+  const t = sound.ctx.currentTime + delay;
+  const osc = sound.ctx.createOscillator();
+  const g = sound.ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  if (freqEnd) osc.frequency.exponentialRampToValueAtTime(freqEnd, t + dur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.01);         // すっと鳴りはじめて
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);       // だんだん消える
+  osc.connect(g); g.connect(sound.master);
+  osc.start(t); osc.stop(t + dur + 0.05);
+}
+
+// 「シュー」という雑音を1回鳴らす（filterFrom→filterTo で音のこもり具合が変わる）
+function noiseBurst(delay, dur, vol, filterType, filterFrom, filterTo, attack) {
+  if (!sound.ctx) return;
+  const t = sound.ctx.currentTime + delay;
+  const src = sound.ctx.createBufferSource();
+  src.buffer = sound.noise;
+  const f = sound.ctx.createBiquadFilter();
+  f.type = filterType;
+  f.frequency.setValueAtTime(filterFrom, t);
+  f.frequency.exponentialRampToValueAtTime(filterTo, t + dur);
+  const g = sound.ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + (attack || 0.02));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(sound.master);
+  src.start(t); src.stop(t + dur + 0.05);
+}
+
+// ① カタパルト発進の音：「ガシャン！」＋「シュゴォォー」と高くなる噴射音
+function playLaunchSound() {
+  tone(110, 0, 0.25, 'square', 0.35, 45);                    // ガシャン（カタパルトが動く音）
+  noiseBurst(0, 0.18, 0.5, 'lowpass', 1500, 300);
+  noiseBurst(0.05, 2.0, 0.6, 'lowpass', 250, 4000, 0.35);    // シュゴォォー（加速していく音）
+  tone(70, 0.05, 1.9, 'sawtooth', 0.12, 220);
+}
+
+// ② ゲートを通ったときの音（結果によって音を変える）
+function playGateSound(kind) {
+  if (kind === 'perfect') {                                    // キラキラ〜ン
+    noiseBurst(0, 0.35, 0.25, 'bandpass', 2500, 600);
+    [880, 1175, 1568, 2093].forEach((f, i) => tone(f, i * 0.06, 0.35, 'triangle', 0.22));
+  } else if (kind === 'pass') {                                // シュッ＋ピコン
+    noiseBurst(0, 0.3, 0.3, 'bandpass', 2200, 500);
+    tone(784, 0.02, 0.18, 'triangle', 0.2, 1175);
+  } else if (kind === 'hit') {                                 // ゴンッ
+    tone(160, 0, 0.35, 'square', 0.3, 55);
+    noiseBurst(0, 0.25, 0.4, 'lowpass', 900, 150);
+  } else {                                                     // ブッブー（失敗）
+    tone(220, 0, 0.16, 'sawtooth', 0.15);
+    tone(165, 0.18, 0.28, 'sawtooth', 0.15);
+  }
+}
+
+// 上級の気球にぶつかったときの音：パーン！
+function playBalloonSound() {
+  noiseBurst(0, 0.2, 0.6, 'highpass', 3000, 800);
+  tone(140, 0, 0.3, 'square', 0.25, 50);
+}
+
+// 自分の機関砲の発射音：「ドドドド」（1発ごとに少し高さを変えて、連射らしく聞こえるように）
+function playPlayerGunSound() {
+  const vol = CONFIG.PLAYER_GUN_VOLUME;
+  const k = rand(0.9, 1.1);                                       // 1発ごとの音のばらつき
+  noiseBurst(0, 0.09, vol, 'bandpass', 2200 * k, 500, 0.003);    // 「ダッ」という破裂音
+  tone(170 * k, 0, 0.08, 'square', vol * 0.35, 70);              // 「ド」という中くらいの音
+  tone(95 * k, 0, 0.11, 'sine', vol * 0.7, 45);                  // おなかにひびく低い音
+  noiseBurst(0.01, 0.04, vol * 0.4, 'highpass', 5000, 3000, 0.002); // 「カチッ」という金属音
+}
+// 自分の弾が戦闘機に当たった音：「カン」
+function playFighterHitSound() {
+  tone(1400, 0, 0.07, 'square', 0.08, 900);
+}
+// ミサイルを撃ち落としたときの音：派手な「ドカン！」
+function playMissileBoomSound() {
+  noiseBurst(0, 0.9, 0.9, 'lowpass', 5000, 90, 0.004);      // ドカン（爆風）
+  tone(150, 0, 0.7, 'sine', 0.7, 35);                        // おなかにひびく低音
+  tone(90, 0, 0.9, 'triangle', 0.4, 28);
+  tone(420, 0, 0.12, 'square', 0.2, 120);                    // はじける音
+  for (let i = 0; i < 5; i++) {                              // パチパチという破片の音
+    noiseBurst(0.08 + i * 0.07 + rand(0, 0.04), 0.06, 0.25, 'highpass', 4000, 2000, 0.003);
+  }
+}
+
+// 撃墜したときの爆発音：「ドカーン」
+function playExplosionSound() {
+  noiseBurst(0, 1.1, 0.7, 'lowpass', 2500, 80, 0.01);
+  tone(100, 0, 0.9, 'sawtooth', 0.25, 30);
+}
+
+// 機関砲の発射音：「ダッ」（遠いほど小さい）
+function playGunSound(dist) {
+  const vol = 0.3 * clamp(1 - dist / 700, 0.15, 1);
+  noiseBurst(0, 0.07, vol, 'lowpass', 2500, 300, 0.005);
+  tone(120, 0, 0.06, 'square', vol * 0.5, 60);
+}
+
+// 機関砲に当たった音：「ガガガッ」
+function playGunHitSound() {
+  for (let i = 0; i < 3; i++) {
+    noiseBurst(i * 0.07, 0.12, 0.5, 'bandpass', 3000, 700, 0.005);
+    tone(320 - i * 60, i * 0.07, 0.12, 'square', 0.22, 90);
+  }
+  tone(180, 0.2, 0.5, 'sawtooth', 0.15, 50);   // スピードが落ちる「ヒューン」
+}
+
+// ③ ゴールの音：BGMがピタッと止まったあと「ジャジャーン！」と鳴る、歓喜のファンファーレ
+// ブラス（金管楽器）っぽい音を1つ鳴らす
+function brass(delay, midiNote, dur, vol) {
+  if (!sound.ctx) return;
+  const ctx = sound.ctx, t = ctx.currentTime + delay;
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.setValueAtTime(800, t);
+  f.frequency.linearRampToValueAtTime(3200, t + 0.06);      // 「パーッ」と明るく開く
+  f.frequency.exponentialRampToValueAtTime(1800, t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+  g.gain.setValueAtTime(vol * 0.85, t + Math.max(0.05, dur - 0.25));
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  f.connect(g); g.connect(sound.master);
+  for (const det of [-8, 8]) {                               // 2つを少しずらして重ねると厚みが出る
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = midiHz(midiNote);
+    o.detune.value = det;
+    o.connect(f);
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+}
+function playGoalSound() {
+  const tr = levelKey === 'hard' ? 2 : 0;                    // 上級は2つ高い調で鳴らす
+  const t0 = 0.15;                                           // ピタッと止まった「間」のあとに鳴らす
+  const C = [60, 64, 67, 72].map(n => n + tr);               // ドミソド（明るい和音）
+  // 「ジャ」「ジャ」
+  for (const t of [t0, t0 + 0.2]) {
+    C.forEach(n => brass(t, n, 0.16, 0.06));
+    tone(98, t, 0.25, 'sine', 0.5, 60);                      // ティンパニ「ドン」
+    noiseBurst(t, 0.12, 0.25, 'bandpass', 2000, 800, 0.003);
+  }
+  // 「ジャーン！」（長くのばす）
+  const t2 = t0 + 0.42;
+  [48, 55, 60, 64, 67, 72, 76].forEach(n => brass(t2, n + tr, 2.4, 0.05));
+  tone(65, t2, 1.2, 'sine', 0.6, 45);
+  noiseBurst(t2, 2.2, 0.3, 'highpass', 6000, 3500, 0.005);  // シンバル「シャーン」
+  for (let i = 0; i < 10; i++) tone(98, t2 + 1.4 + i * 0.05, 0.08, 'sine', 0.15 + i * 0.02, 70);  // ティンパニのロール
+  // キラキラと上っていく音
+  [84, 88, 91, 96, 100, 103].forEach((n, i) => tone(midiHz(n + tr), t2 + 0.1 + i * 0.07, 0.5, 'triangle', 0.08));
+  // 最後にもう一度「ジャン！」
+  [48, 60, 64, 67, 72, 79].forEach(n => brass(t2 + 1.95, n + tr, 1.3, 0.055));
+  noiseBurst(t2 + 1.95, 1.6, 0.25, 'highpass', 6000, 3500, 0.005);
+  noiseBurst(t2 + 0.2, 2.8, 0.12, 'bandpass', 1500, 900, 0.3);   // 歓声のような「ワー」
+}
+
+// ④ 飛んでいるあいだの音：速さに合わせて、高さと大きさを毎フレーム変える
+function updateEngineSound() {
+  if (!sound.ctx) return;
+  const t = sound.ctx.currentTime;
+  let vol = 0;
+  if (!paused && (phase === 'launch' || phase === 'fly' || phase === 'goal')) {
+    const k = clamp(plane.speed / level.boostSpeed, 0, 1.2);  // 速さの割合
+    vol = CONFIG.ENGINE_VOLUME * (0.35 + 0.65 * k);
+    if (phase === 'goal') vol *= Math.max(0, 1 - goalTimer / CONFIG.GOAL_SHOW_TIME);  // ゴール後は遠ざかる
+  }
+  sound.engineGain.gain.setTargetAtTime(vol, t, 0.15);
+  const playing = !paused && ['ready', 'launch', 'fly', 'goal', 'result', 'gameover'].includes(phase);
+  const rainVol = playing ? CONFIG.RAIN_VOLUME * clamp(wmix(0, 0.4, 1), 0, 1) : 0;
+  sound.rainGain.gain.setTargetAtTime(rainVol, t, 0.3);
+  sound.engineFilter.frequency.setTargetAtTime(350 + plane.speed * 18, t, 0.2);   // 速いほど「ヒュー」と高く
+  sound.engineOsc.frequency.setTargetAtTime(45 + plane.speed * 0.9, t, 0.2);      // 速いほどうなりも高く
+}
+
+// =====================================================================
+// 8-3. BGM（音のファイルは使わず、その場で作曲して鳴らす）
+//   0 = 晴れ：爽快なテンポ（ハ長調）
+//   1 = 小雨：緊迫感アップ（イ短調・速いベース）
+//   2 = 嵐　：重厚なクライマックス（ニ短調・ブラスとドラム）
+//   天気が変わると、小節の切れ目で曲が切りかわる
+// =====================================================================
+const bgm = { playing: false, timer: null, nextTime: 0, step: 0, section: 0, want: 0, lastSection: -1,
+              sectionBar: 0,      // 今の曲になってから何小節目か（中盤の曲はだんだん盛り上がる）
+              pinch: 0,           // ピンチのどあい（0〜1）。大きいほど音が重なり、テンポが速くなる
+              pinchTarget: 0 };
+
+// 曲ごとの設定（bpm = テンポ、chords = 4小節分の和音。数字は音の高さ：60がド）
+const BGM_SECTIONS = [
+  { bpm: 140, chords: [[60, 64, 67], [55, 59, 62], [57, 60, 64], [53, 57, 60]] },  // 晴れ：C → G → Am → F（明るい）
+  { bpm: 146, chords: [[57, 60, 64], [53, 57, 60], [50, 53, 57], [52, 56, 59]] },  // 小雨：Am → F → Dm → E（不穏）
+  { bpm: 164, chords: [[50, 53, 57], [46, 50, 53], [43, 46, 50], [45, 49, 52]] }   // 嵐　：Dm → B♭ → Gm → A（スリリング）
+];
+// ----- 上級の曲（コンセプトは同じで、ちがう曲） -----
+const BGM_SECTIONS_HARD = [
+  { bpm: 152, chords: [[62, 66, 69], [54, 57, 61], [55, 59, 62], [57, 61, 64]] },  // 晴れ：D → F#m → G → A（ユーロビート風）
+  { bpm: 156, chords: [[52, 55, 59], [48, 52, 55], [45, 48, 52], [47, 51, 54]] },  // 小雨：Em → C → Am → B（時計の音で不安をあおる）
+  { bpm: 174, chords: [[54, 57, 61], [50, 54, 57], [52, 56, 59], [49, 53, 56]] }   // 嵐　：F#m → D → E → C#（ドラムンベース風）
+];
+const HARD_SUNNY_MELODY = [
+  [81, 78, 74, 78, 81, 83, 81, 78],
+  [78, 76, 73, 76, 78, 81, 78, 76],
+  [79, 78, 74, 79, 83, 81, 79, 78],
+  [76, 78, 79, 81, 83, 85, 86, 88]
+];
+const HARD_STORM_MELODY = [
+  [78, 0, 81, 80],
+  [78, 0, 74, 76],
+  [76, 0, 80, 83],
+  [85, 84, 81, 77]
+];
+// いまの難易度の曲の設定
+function bgmSections() { return levelKey === 'hard' ? BGM_SECTIONS_HARD : BGM_SECTIONS; }
+
+// 晴れの曲のメロディ（1小節に8分音符8つ。数字は音の高さ）
+const SUNNY_MELODY = [
+  [72, 74, 76, 79, 76, 74, 72, 74],
+  [74, 71, 74, 79, 81, 79, 74, 71],
+  [76, 72, 76, 81, 79, 76, 72, 76],
+  [77, 76, 74, 72, 74, 76, 77, 79]
+];
+// 嵐の曲のメロディ（1小節に4分音符4つ。0は休み）
+const STORM_MELODY = [
+  [74, 0, 72, 74],
+  [77, 0, 74, 70],
+  [70, 0, 69, 67],
+  [69, 73, 76, 81]
+];
+
+// 音の番号を「ヘルツ」に直す
+function midiHz(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+// BGM 用の楽器の音を1つ鳴らす（t は鳴らす時刻）
+function bOsc(t, freq, dur, type, vol, opt) {
+  opt = opt || {};
+  if (vol < 0.1) vol *= CONFIG.BGM_MELODY_BOOST;   // 小さめの音（メロディ・和音・きざみ）を大きくする
+  const ctx = sound.ctx;
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  if (opt.freqEnd) o.frequency.exponentialRampToValueAtTime(opt.freqEnd, t + dur);
+  if (opt.detune) o.detune.value = opt.detune;
+  const a = opt.attack || 0.005;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + a);
+  if (opt.sustain && dur * 0.7 > a) g.gain.setValueAtTime(vol, t + dur * 0.7);   // しばらくのばす
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  let node = o;
+  if (opt.cutoff) {                       // 音を少しこもらせる
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = opt.cutoff;
+    o.connect(f);
+    node = f;
+  }
+  node.connect(g);
+  g.connect(sound.bgmGain);
+  o.start(t);
+  o.stop(t + dur + 0.05);
+}
+// BGM 用の「シャッ」という雑音（ドラム用）
+function bNoise(t, dur, vol, type, freq) {
+  const ctx = sound.ctx;
+  const src = ctx.createBufferSource();
+  src.buffer = sound.noise;
+  const f = ctx.createBiquadFilter();
+  f.type = type;
+  f.frequency.value = freq;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(sound.bgmGain);
+  src.start(t, Math.random() * 0.5);
+  src.stop(t + dur + 0.05);
+}
+// ドラム
+function kick(t, v)  { bOsc(t, 150, 0.2, 'sine', v, { freqEnd: 42 }); }
+function snare(t, v) { bNoise(t, 0.16, v, 'bandpass', 1900); bOsc(t, 210, 0.08, 'triangle', v * 0.5, { freqEnd: 150 }); }
+function hat(t, v)   { bNoise(t, 0.04, v, 'highpass', 7500); }
+function crash(t, v) { bNoise(t, 1.4, v, 'highpass', 5000); }
+function tom(t, f, v) { bOsc(t, f, 0.25, 'sine', v, { freqEnd: f * 0.5 }); }
+
+// 「シュワーッ」と高さが変わる風の音（盛り上げ用）
+function bSweep(t, dur, vol, f1, f2) {
+  const ctx = sound.ctx;
+  const src = ctx.createBufferSource();
+  src.buffer = sound.noise;
+  const f = ctx.createBiquadFilter();
+  f.type = 'bandpass';
+  f.Q.value = 2;
+  f.frequency.setValueAtTime(f1, t);
+  f.frequency.exponentialRampToValueAtTime(f2, t + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.8);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(sound.bgmGain);
+  src.start(t, Math.random() * 0.2);
+  src.stop(t + dur + 0.05);
+}
+
+// 16分音符1つぶんの音を鳴らす（sec=曲の番号 bar=何小節目 st=小節の中の何番目 0〜15 sd=16分音符の長さ）
+function playStep(sec, bar, st, t, sd) {
+  const chord = bgmSections()[sec].chords[bar % 4];
+  const root = chord[0];
+  const barLen = sd * 16;
+  const build = bgm.sectionBar;      // 今の曲になってから何小節目か
+
+  if (levelKey === 'hard') {
+    playStepHard(sec, bar, st, t, sd, chord, root, barLen, build);   // 上級は別の曲
+  } else if (sec === 0) {
+    // ===== 序盤（晴れ）：軽快で爽快、風を切るようなアップテンポ =====
+    if (st === 0 || st === 8 || st === 10) kick(t, 0.5);
+    if (st === 4 || st === 12) snare(t, 0.22);
+    if (st % 2 === 0) hat(t, st % 4 === 2 ? 0.09 : 0.05);
+    if (st % 2 === 0) bOsc(t, midiHz(root - (st % 4 === 2 ? 12 : 24)), sd * 1.8, 'sawtooth', 0.12, { cutoff: 1100 });  // はねるベース
+    if (st % 2 === 0) {                                     // 明るいメロディ
+      bOsc(t, midiHz(SUNNY_MELODY[bar % 4][st / 2]), sd * 1.7, 'square', 0.04, { cutoff: 3200 });
+    }
+    if (st % 2 === 1) bOsc(t, midiHz(chord[(st >> 1) % 3] + 24), sd * 0.9, 'triangle', 0.035);  // キラキラ
+    if (st === 0) chord.forEach(n => bOsc(t, midiHz(n), barLen, 'sine', 0.03, { attack: 0.08, sustain: true }));
+    if (bar % 2 === 1 && st === 8) bSweep(t, sd * 8, 0.07, 400, 4000);   // 風を切る「シュワーッ」
+  } else if (sec === 1) {
+    // ===== 中盤（小雨）：不穏なフレーズが混じり、緊迫感がじわじわ高まる =====
+    if (st === 0 || st === 8 || st === 11) kick(t, 0.5);
+    if (st === 12 || (build >= 2 && st === 4)) snare(t, 0.24);
+    hat(t, st % 4 === 2 ? 0.07 : 0.03);
+    bOsc(t, midiHz(root - 24), sd * 0.9, 'sawtooth', 0.13, { cutoff: 500 + Math.min(build, 8) * 90 });  // だんだん明るく強くなるベース
+    // 半音でゆれる不穏なフレーズ
+    const motif = { 0: 12, 2: 13, 4: 12, 7: 11 }[st];
+    if (motif !== undefined) bOsc(t, midiHz(root + motif), sd * 1.5, 'square', 0.04, { cutoff: 1600 });
+    if (bar % 4 === 3 && st >= 8 && st % 2 === 0) {         // 半音ずつ下がっていく、いやな予感のフレーズ
+      bOsc(t, midiHz(root + 19 - (st - 8) / 2), sd * 1.8, 'square', 0.04, { cutoff: 1800 });
+    }
+    if (build >= 2 && st === 0) chord.forEach((n, i) => bOsc(t, midiHz(n), barLen, 'sawtooth', 0.02,
+      { attack: 0.4, sustain: true, cutoff: 900, detune: i * 6 - 6 }));
+    if (build >= 4) bOsc(t, midiHz(chord[2] + 12), sd * 0.7, 'sawtooth', 0.014, { cutoff: 2600 });  // 細かくふるえる弦の音
+    if (bar % 4 === 3 && st === 8) bSweep(t, sd * 8, 0.06, 300, 3000);
+    if (bar % 8 === 7 && st >= 8) snare(t, 0.06 + (st - 8) * 0.025);   // 「ダダダダ」と高まるスネア
+  } else {
+    // ===== 終盤（嵐）：重厚なビートと、ハラハラドキドキのスリリングな曲 =====
+    if (bar % 4 === 0 && st === 0) crash(t, 0.14);
+    if ([0, 3, 6, 8, 11, 14].includes(st)) kick(t, 0.6);           // 重く走るキック
+    if (st === 4 || st === 12) snare(t, 0.32);
+    if (bar % 4 === 3 && st >= 12) snare(t, 0.22);                  // フィルイン
+    if (st === 7 || st === 15) tom(t, 110, 0.4);                    // 太鼓「ドン」
+    if (st % 2 === 0) hat(t, 0.06);
+    if (st % 4 !== 1) bOsc(t, midiHz(root - (st % 4 === 2 ? 12 : 24)), sd * 0.9, 'sawtooth', 0.14, { cutoff: 1000 });  // ギャロップのベース
+    if (st % 8 === 0) bOsc(t, midiHz(root - 36), sd * 7, 'sine', 0.25);   // 地ひびき
+    const idx = [0, 1, 2, 1][st % 4];                                // 弦楽器の速いきざみ
+    bOsc(t, midiHz(chord[idx] + 12), sd * 0.8, 'sawtooth', 0.028, { cutoff: 2300 });
+    if (st === 0 || st === 10) chord.forEach(n => {                  // ブラスの「バーン！」
+      bOsc(t, midiHz(n), sd * 3, 'sawtooth', 0.04, { cutoff: 1900, detune: -8 });
+      bOsc(t, midiHz(n + 12), sd * 3, 'sawtooth', 0.03, { cutoff: 1900, detune: 8 });
+    });
+    if (st % 4 === 0) {                                              // 勇ましいメロディ
+      const m = STORM_MELODY[bar % 4][st / 4];
+      if (m) bOsc(t, midiHz(m), sd * 3.6, 'square', 0.04, { cutoff: 2700, attack: 0.01 });
+    }
+    if (bar % 8 === 7 && st === 0) bSweep(t, barLen, 0.08, 200, 5000);   // サイレンのように上がる音
+  }
+
+  // ===== ピンチのときに重なる音（ダイナミック・ミュージック） =====
+  const p = bgm.pinch;
+  if (p > 0.15) {
+    if (st === 0 || st === 3 || st === 8 || st === 11) bOsc(t, 55, 0.22, 'sine', 0.45 * p, { freqEnd: 38 });  // 心臓の「ドキッ、ドキッ」
+    if (st % 2 === 0) bOsc(t, midiHz(root + 24 + (st % 4 === 0 ? 0 : 1)), sd * 0.9, 'square', 0.035 * p, { cutoff: 3500 });  // 半音で鳴る警報のような音
+    hat(t, 0.05 * p);                                                // 細かいハイハット
+    if (p > 0.6) bOsc(t, midiHz(chord[2] + 24), sd * 0.6, 'sawtooth', 0.02 * p, { cutoff: 4000 });  // 高い弦のトレモロ
+  }
+}
+
+// ----- 上級の曲の中身 -----
+function playStepHard(sec, bar, st, t, sd, chord, root, barLen, build) {
+  if (sec === 0) {
+    // ===== 上級・序盤（晴れ）：ユーロビート風。4つ打ちとオクターブで跳ねるベースで、風を切って突っ走る =====
+    if (st % 4 === 0) kick(t, 0.55);
+    if (st === 4 || st === 12) snare(t, 0.25);
+    if (st % 4 === 2) hat(t, 0.11);                       // 裏打ちのハイハット
+    else if (st % 2 === 1) hat(t, 0.03);
+    if (st % 2 === 0) bOsc(t, midiHz(root - (st % 4 === 0 ? 24 : 12)), sd * 0.9, 'sawtooth', 0.13, { cutoff: 1500 });  // オクターブベース
+    // 16分の速いシンセのきざみ（2つ重ねて厚みを出す）
+    bOsc(t, midiHz(chord[st % 3] + 12), sd * 0.8, 'sawtooth', 0.018, { cutoff: 3200, detune: -10 });
+    bOsc(t, midiHz(chord[st % 3] + 12), sd * 0.8, 'sawtooth', 0.018, { cutoff: 3200, detune: 10 });
+    if (st % 2 === 0) bOsc(t, midiHz(HARD_SUNNY_MELODY[bar % 4][st / 2]), sd * 1.7, 'square', 0.042, { cutoff: 3500 });
+    if (st === 0) chord.forEach(n => bOsc(t, midiHz(n - 12), barLen, 'triangle', 0.03, { attack: 0.05, sustain: true }));
+    if (bar % 2 === 1 && st === 8) bSweep(t, sd * 8, 0.08, 500, 6000);   // 風を切る「シュワーッ」
+  } else if (sec === 1) {
+    // ===== 上級・中盤（小雨）：時計の「チクタク」と、不気味な音程で不安があおられる =====
+    if (st === 0 || st === 6 || st === 8) kick(t, 0.5);
+    if (st === 12 || (build >= 2 && st === 4)) snare(t, 0.25);
+    if (st % 4 === 0) bOsc(t, 1800, 0.03, 'square', 0.04);   // チク
+    if (st % 4 === 2) bOsc(t, 1350, 0.03, 'square', 0.03);   // タク
+    if (st % 2 === 0) bOsc(t, midiHz(root - 24), sd * 1.6, 'sawtooth', 0.14, { cutoff: 450 + Math.min(build, 8) * 80 });
+    // 不気味にひびく音程（増4度）をふくむフレーズ
+    const motif = { 0: 12, 3: 18, 6: 17, 10: 12 }[st];
+    if (motif !== undefined) bOsc(t, midiHz(root + motif), sd * 2, 'square', 0.04, { cutoff: 1500 });
+    if (bar % 4 === 3 && st >= 8 && st % 2 === 0) {           // 半音ずつ、はい上がってくるフレーズ
+      bOsc(t, midiHz(root + 12 + (st - 8) / 2), sd * 1.8, 'square', 0.04, { cutoff: 1800 });
+    }
+    if (build >= 2 && st === 0) chord.forEach((n, i) => bOsc(t, midiHz(n), barLen, 'sawtooth', 0.02,
+      { attack: 0.5, sustain: true, cutoff: 800, detune: i * 7 - 7 }));
+    if (build >= 3) bOsc(t, midiHz(chord[1] + 24), sd * 0.6, 'sawtooth', 0.012, { cutoff: 3000 });  // ふるえる高い弦
+    if (bar % 4 === 3 && st === 8) bSweep(t, sd * 8, 0.07, 250, 3500);
+    if (bar % 8 === 7 && st >= 8) snare(t, 0.06 + (st - 8) * 0.025);
+  } else {
+    // ===== 上級・終盤（嵐）：ドラムンベース風の速いビートと、うなるベースで手に汗にぎる =====
+    if (bar % 4 === 0 && st === 0) crash(t, 0.15);
+    if (st === 0 || st === 10 || (bar % 2 === 1 && st === 7)) kick(t, 0.62);
+    if (st === 4 || st === 12) snare(t, 0.34);
+    if (st === 7 || st === 15) snare(t, 0.08);                 // 小さなかくし味のスネア
+    if (bar % 4 === 3 && st >= 12) snare(t, 0.22);
+    hat(t, st % 2 === 1 ? 0.06 : 0.035);
+    if (st === 14) tom(t, 100, 0.4);
+    if (st % 8 === 0) {                                         // うなる「ブーン」というベース
+      bOsc(t, midiHz(root - 24), sd * 7.5, 'sawtooth', 0.11, { cutoff: 700, detune: -15, sustain: true });
+      bOsc(t, midiHz(root - 24), sd * 7.5, 'sawtooth', 0.11, { cutoff: 700, detune: 15, sustain: true });
+      bOsc(t, midiHz(root - 36), sd * 7.5, 'sine', 0.25, { sustain: true });
+    }
+    // 弦楽器の速いきざみ（ときどき半音上の音がまざって、ヒヤッとする）
+    const note = st % 8 === 7 ? chord[0] + 13 : chord[[0, 2, 1, 2][st % 4]] + 12;
+    bOsc(t, midiHz(note), sd * 0.8, 'sawtooth', 0.026, { cutoff: 2600 });
+    const hits = bar % 2 === 0 ? [0, 3, 6] : [0, 10];            // シンコペーションのブラス
+    if (hits.includes(st)) chord.forEach(n => {
+      bOsc(t, midiHz(n), sd * 2.5, 'sawtooth', 0.04, { cutoff: 2000, detune: -8 });
+      bOsc(t, midiHz(n + 12), sd * 2.5, 'sawtooth', 0.03, { cutoff: 2000, detune: 8 });
+    });
+    if (st === 0) chord.forEach(n => bOsc(t, midiHz(n + 12), barLen, 'triangle', 0.025, { attack: 0.25, sustain: true }));  // 合唱のような音
+    if (st % 4 === 0) {
+      const m = HARD_STORM_MELODY[bar % 4][st / 4];
+      if (m) bOsc(t, midiHz(m), sd * 3.6, 'square', 0.042, { cutoff: 2900, attack: 0.01 });
+    }
+    if (bar % 8 === 7 && st === 0) bSweep(t, barLen, 0.09, 200, 6000);
+  }
+}
+
+// 少し先までの音を予約していく（25ミリ秒ごとに呼ばれる）
+function bgmTick() {
+  if (!bgm.playing || !sound.ctx) return;
+  const ctx = sound.ctx;
+  if (paused) { bgm.nextTime = ctx.currentTime + 0.05; return; }   // 一時停止中は止める
+  while (bgm.nextTime < ctx.currentTime + 0.15) {
+    const st = bgm.step % 16;
+    if (st === 0) {                           // 小節の頭で曲を切りかえる
+      bgm.section = bgm.want;
+      bgm.sectionBar = bgm.section === bgm.lastSection ? bgm.sectionBar + 1 : 0;
+    }
+    const sec = bgm.section;
+    const bpm = bgmSections()[sec].bpm * (1 + CONFIG.PINCH_TEMPO_UP * bgm.pinch);  // ピンチのときはテンポが速くなる
+    const sd = 60 / bpm / 4;                  // 16分音符の長さ（秒）
+    if (st === 0 && sec !== bgm.lastSection && bgm.lastSection >= 0) crash(bgm.nextTime, 0.15);  // 切りかわりの合図
+    if (st === 0) bgm.lastSection = sec;
+    playStep(sec, Math.floor(bgm.step / 16), st, bgm.nextTime, sd);
+    bgm.nextTime += sd;
+    bgm.step++;
+  }
+}
+
+function startBGM() {
+  if (!sound.ctx || !sound.bgmGain) return;
+  stopBGM(false);
+  const t = sound.ctx.currentTime;
+  sound.bgmGain.gain.cancelScheduledValues(t);
+  sound.bgmGain.gain.setValueAtTime(CONFIG.BGM_VOLUME, t);
+  bgm.playing = true;
+  bgm.step = 0;
+  bgm.section = bgm.want = 0;
+  bgm.lastSection = -1;
+  bgm.sectionBar = 0;
+  bgm.pinch = 0; bgm.pinchTarget = 0;
+  bgm.nextTime = t + 0.1;
+  bgm.timer = setInterval(bgmTick, 25);
+}
+
+// BGM を止める
+//   fade が true  … ゆっくり小さくして止める（ゲームオーバー・タイトルへ）
+//   fade が 'cut' … ピタッと一瞬で止める（ゴールの瞬間）
+function stopBGM(fade) {
+  bgm.playing = false;
+  if (bgm.timer) { clearInterval(bgm.timer); bgm.timer = null; }
+  if (fade && sound.ctx && sound.bgmGain) {
+    const t = sound.ctx.currentTime;
+    sound.bgmGain.gain.cancelScheduledValues(t);
+    sound.bgmGain.gain.setValueAtTime(sound.bgmGain.gain.value, t);
+    sound.bgmGain.gain.linearRampToValueAtTime(0, t + (fade === 'cut' ? 0.03 : 1));
+  }
+}
+
+// ピンチのどあいを調べる（ミサイルが近い・当たった直後・地面やエリアのはしに近い）
+function updatePinch(dt) {
+  let p = 0;
+  if (phase === 'fly') {
+    const ax = planeAxes();
+    for (const m of missiles) {
+      const to = m.position.clone().sub(plane.pos);
+      const d = to.length();
+      if (to.dot(ax.fwd) > 0 && d < CONFIG.PINCH_MISSILE_DISTANCE) p = Math.max(p, 1.2 - d / CONFIG.PINCH_MISSILE_DISTANCE);
+    }
+    if (invincible > 0) p = Math.max(p, 1);                       // 当たった直後
+    if ($('warning').style.display === 'block') p = Math.max(p, 0.7);   // 墜落・エリア外が近い
+  }
+  bgm.pinchTarget = clamp(p, 0, 1);
+  // ピンチになったらすぐ、落ち着いたらゆっくり元にもどす
+  bgm.pinch += clamp(bgm.pinchTarget - bgm.pinch, -0.5 * dt, 3 * dt);
+}
+
+// =====================================================================
+// 9. キーボードの入力
+// =====================================================================
+const keys = {};
+window.addEventListener('keydown', e => {
+  // 矢印キーやスペースでページがスクロールしないようにする
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  keys[e.code] = true;
+  if (e.repeat) return;   // 押しっぱなしの連打は無視
+  initSound();            // 最初に押したときに音を使えるようにする
+  onKeyPress(e.code);
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+window.addEventListener('pointerdown', initSound);   // マウスでクリックしたときも音を準備
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+// 1回押したときの処理（決定・一時停止など）
+function onKeyPress(code) {
+  const ok = (code === 'Space' || code === 'Enter');
+  if (code === 'KeyM') { toggleSound(); return; }   // M キーで音のオン・オフ
+  if (phase === 'title' && code === 'ArrowLeft') selectLevel('easy');
+  else if (phase === 'title' && code === 'ArrowRight') selectLevel('hard');
+  else if (phase === 'title' && ok) showHowto();
+  else if (phase === 'howto' && ok) startGame();
+  else if (phase === 'howto' && (code === 'Escape' || code === 'Backspace')) goTitle();  // タイトルにもどる
+  else if (phase === 'ready' && code === 'Space' && !paused) launch();
+  else if ((phase === 'ready' || phase === 'launch' || phase === 'fly') && code === 'Escape') togglePause();
+  else if ((phase === 'result' || phase === 'gameover') && ok) startGame();
+}
+
+// ボタンを押したとき（押したあとボタンの選択を外して、スペースの二重反応を防ぐ）
+function onButton(id, fn) {
+  $(id).addEventListener('click', e => { e.currentTarget.blur(); fn(); });
+}
+onButton('btnStart', showHowto);
+onButton('btnEasy', () => selectLevel('easy'));
+onButton('btnHard', () => selectLevel('hard'));
+onButton('btnGo', startGame);
+onButton('btnHowtoBack', goTitle);
+onButton('btnResume', togglePause);
+onButton('btnPauseTitle', goTitle);
+onButton('btnRetry', startGame);
+onButton('btnRetry2', startGame);
+onButton('btnResultTitle', goTitle);
+onButton('btnOverTitle', goTitle);
+
+// =====================================================================
+// 10. 画面の切りかえ
+// =====================================================================
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  if (id) $(id).classList.add('active');
+}
+
+function goTitle() {
+  paused = false;
+  phase = 'title';
+  stopBGM(true);
+  resetFighters();
+  resetPlane();
+  showScreen('titleScreen');
+  $('hud').style.display = 'none';
+  // 難易度ごとの自己ベストを表示
+  const parts = Object.keys(DIFFICULTY).map(k => {
+    const list = loadRanking(k);
+    return DIFFICULTY[k].name + ' ' + (list.length ? formatTime(list[0].time) + '（' + list[0].rank + '）' : '---');
+  });
+  $('titleBest').textContent = '自己ベスト　' + parts.join(' ／ ');
+}
+
+// 難易度を選ぶ
+function selectLevel(k) {
+  levelKey = k;
+  level = DIFFICULTY[k];
+  $('btnEasy').classList.toggle('selected', k === 'easy');
+  $('btnHard').classList.toggle('selected', k === 'hard');
+  setPlaneModel(k);
+  setWorld(k);           // 景色も切りかえる
+  resetPlane();          // タイトル画面の空母の上の機体も、選んだ難易度の機体にする
+}
+
+function showHowto() {
+  phase = 'howto';
+  $('howtoLevel').textContent = '（難易度：' + level.name + '）';
+  $('howtoHp').textContent = CONFIG.FIGHTER_HP;
+  $('howtoMissile').textContent = CONFIG.MISSILE_BONUS;
+  $('howtoBonus').textContent = CONFIG.SHOOTDOWN_BONUS;   // 説明の秒数も CONFIG に合わせる
+  $('howtoBalloon').style.display = level.obstacles > 0 ? 'inline' : 'none';
+  showScreen('howtoScreen');
+}
+
+// ゲーム開始（発進待ちの状態にする）
+function startGame() {
+  buildCourse();
+  setPlaneModel(levelKey);
+  setWorld(levelKey);
+  resetPlane();
+  elapsed = 0; penalty = 0; nextGate = 0;
+  passCount = 0; missCount = 0; hitCount = 0;
+  bonus = 0; perfectCount = 0; balloonHits = 0;
+  gunHits = 0; shootDowns = 0; missileDowns = 0;
+  resetWeather();
+  resetFighters();
+  paused = false;
+  phase = 'ready';
+  snapCamera = true;
+  showScreen(null);
+  $('hud').style.display = 'block';
+  $('centerMsg').innerHTML = 'スペースキーで<br>カタパルト発進！';
+  startBGM();
+  updateHudText();
+}
+
+// 機体を空母の上に戻す
+function resetPlane() {
+  plane.pos.set(0, DECK_Y + 1, START_Z);
+  plane.yaw = 0; plane.pitch = 0; plane.bank = 0; plane.speed = 0;
+  ctrlTurn = 0; ctrlUp = 0;
+  planeMesh.visible = true;
+  applyPlaneMesh();
+  clearTrails();
+}
+
+// カタパルト発進！（ここからタイムが動き出す）
+function launch() {
+  phase = 'launch';
+  playLaunchSound();
+  $('centerMsg').textContent = '';
+}
+
+function togglePause() {
+  paused = !paused;
+  showScreen(paused ? 'pauseScreen' : null);
+}
+
+// =====================================================================
+// 11. 毎フレームの処理（ゲームの心臓部）
+// =====================================================================
+let lastTime = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min((now - lastTime) / 1000, 0.05); // 1コマの時間（大きすぎないように制限）
+  lastTime = now;
+  if (!paused) {
+    worldTime += dt;
+    update(dt);
+    updateCamera(dt);
+    updateTrails();
+    animateDecor();
+    updateWeather(dt);
+  }
+  updateEngineSound();
+  renderer.render(scene, camera);
+  drawWeather();
+  drawGauges();
+  updateMarker();
+  updateCrosshair();
+}
+
+function update(dt) {
+  if (phase === 'launch') {
+    // カタパルトでぐんぐん加速して甲板を走る
+    plane.speed += CONFIG.CATAPULT_ACCEL * dt;
+    plane.pos.z -= plane.speed * dt;
+    elapsed += dt;
+    if (plane.pos.z <= DECK_END_Z) {        // 甲板の先まで来たら飛行開始
+      phase = 'fly';
+      plane.pitch = CONFIG.LIFTOFF_PITCH;
+      showPopup('テイクオフ！', '#ffffff');
+    }
+  } else if (phase === 'fly') {
+    elapsed += dt;
+    const prev = plane.pos.clone();
+    controlPlane(dt);
+    movePlane(dt);
+    applyWind(dt);
+    checkGate(prev);
+    checkBalloons();
+    updateFighters(dt, prev);
+    checkGoal(prev);
+    checkCrash();
+  } else if (phase === 'goal') {
+    // ゴール後：まっすぐ少し上昇しながら飛んでいく
+    plane.pitch += (0.25 - plane.pitch) * Math.min(1, 2 * dt);
+    plane.bank *= 0.95;
+    movePlane(dt);
+    goalTimer += dt;
+    if (goalTimer >= CONFIG.GOAL_SHOW_TIME) showResult();
+  }
+  applyPlaneMesh();
+  if (phase === 'launch' || phase === 'fly') updateHudText();
+}
+
+// キー入力で機体の向きと速さを変える
+function controlPlane(dt) {
+  const turn = (keys.ArrowLeft ? 1 : 0) - (keys.ArrowRight ? 1 : 0);
+  let up = (keys.ArrowUp ? 1 : 0) - (keys.ArrowDown ? 1 : 0);
+  if (CONFIG.INVERT_UPDOWN) up = -up;
+
+  // 天気が悪いほど、キーを押してから機体が反応するまでが少しおそくなる（重い・すべる感じ）
+  const resp = wmix(CONFIG.CONTROL_SUNNY, CONFIG.CONTROL_RAIN, CONFIG.CONTROL_STORM);
+  ctrlTurn += (turn - ctrlTurn) * Math.min(1, resp * dt);
+  ctrlUp += (up - ctrlUp) * Math.min(1, resp * dt);
+
+  plane.yaw += ctrlTurn * level.turnSpeed * dt;                 // 左右に曲がる
+  if (Math.abs(ctrlUp) > 0.05) plane.pitch += ctrlUp * CONFIG.PITCH_SPEED * dt; // 上下を向く
+  else plane.pitch -= plane.pitch * Math.min(1, CONFIG.AUTO_LEVEL * dt); // 離すと水平に戻る
+  plane.pitch = clamp(plane.pitch, -CONFIG.MAX_PITCH, CONFIG.MAX_PITCH);
+  plane.bank += (ctrlTurn * CONFIG.MAX_BANK - plane.bank) * Math.min(1, 6 * dt); // かたむき（見た目）
+
+  // スペースを押している間はブースト。速さは少しずつ目標に近づく
+  const target = keys.Space ? level.boostSpeed : level.baseSpeed;
+  plane.speed += clamp(target - plane.speed, -CONFIG.ACCEL * dt, CONFIG.ACCEL * dt);
+}
+
+// 機体が向いている方向に進める
+function movePlane(dt) {
+  const cp = Math.cos(plane.pitch);
+  const forward = new THREE.Vector3(-Math.sin(plane.yaw) * cp, Math.sin(plane.pitch), -Math.cos(plane.yaw) * cp);
+  plane.pos.addScaledVector(forward, plane.speed * dt);
+}
+
+// 計算した位置と向きを、模型に反映する
+function applyPlaneMesh() {
+  planeMesh.position.copy(plane.pos);
+  planeMesh.rotation.set(plane.pitch, plane.yaw, plane.bank);
+  const boosting = keys.Space && phase === 'fly';
+  const f = (boosting ? 1.8 : 1) * (0.85 + Math.random() * 0.3);  // 炎のゆらめき
+  planeMesh.userData.flame.scale.set(1, f, 1);
+  planeMesh.userData.core.scale.set(1, f, 1);
+}
+
+// いまの合計タイム（飛行時間 ＋ ペナルティ − パーフェクトのボーナス）
+function totalTime() {
+  return Math.max(0, elapsed + penalty - bonus);
+}
+
+// =====================================================================
+// 12. 判定（ゲート・ゴール・墜落・気球）
+// =====================================================================
+// 次のゲートの「面」を通り過ぎた瞬間に、輪の中心からの距離で判定する
+function checkGate(prev) {
+  if (nextGate >= gates.length) return;
+  const g = gates[nextGate];
+  if (prev.z > g.position.z && plane.pos.z <= g.position.z) {
+    const d = Math.hypot(plane.pos.x - g.position.x, plane.pos.y - g.position.y);
+    const inner = level.gateRadius - CONFIG.GATE_TUBE - CONFIG.PLANE_HIT_SIZE;
+    const outer = level.gateRadius + CONFIG.GATE_TUBE + CONFIG.PLANE_HIT_SIZE;
+    const perfect = level.gateRadius * CONFIG.PERFECT_RATE;
+    if (d < perfect) {
+      passCount++;                       // 真ん中を通った！パーフェクト
+      perfectCount++;
+      bonus += CONFIG.PERFECT_BONUS;
+      paintGate(g, 0xffb300, 0xfff59d);
+      showPopup('パーフェクト！ −' + CONFIG.PERFECT_BONUS + '秒', '#ffeb3b');
+      playGateSound('perfect');
+    } else if (d < inner) {
+      passCount++;                       // 成功！
+      paintGate(g, 0x2e7d32, 0x9cff9c);
+      showPopup('ナイス！', '#9cff9c');
+      playGateSound('pass');
+    } else if (d < outer) {
+      hitCount++;                        // 枠にぶつかった
+      penalty += CONFIG.PENALTY_HIT;
+      plane.speed *= CONFIG.HIT_SPEED_RATE;
+      paintGate(g, 0xff6f00, 0xffcc80);
+      showPopup('ガツン！ 減速＋' + CONFIG.PENALTY_HIT + '秒', '#ffb74d');
+      playGateSound('hit');
+    } else {
+      missCount++;                       // くぐれなかった
+      penalty += CONFIG.PENALTY_MISS;
+      paintGate(g, 0x616161, 0x9e9e9e);
+      showPopup('ゲート失敗 ＋' + CONFIG.PENALTY_MISS + '秒', '#ff5252');
+      playGateSound('miss');
+    }
+    g.userData.state = 'done';
+    nextGate++;
+  }
+}
+
+// 通り過ぎたゲートの色を変えてうすくする
+function paintGate(g, c1, c2) {
+  g.userData.red.color.setHex(c1);
+  g.userData.white.color.setHex(c2);
+  g.userData.red.opacity = g.userData.white.opacity = 0.4;
+  g.userData.red.emissive.setHex(0);
+  g.userData.white.emissive.setHex(0);
+  g.userData.ring.visible = false;
+  g.userData.extras.forEach(m => { m.visible = false; });   // 通ったゲートの光は消す
+  g.scale.setScalar(1);
+}
+
+// 上級：じゃま気球にぶつかったか調べる（ぶつかった気球はわれて消える）
+function checkBalloons() {
+  for (const o of obstacles) {
+    if (!o.userData.alive) continue;
+    if (o.position.distanceTo(plane.pos) < CONFIG.BALLOON_HIT_SIZE) {
+      o.userData.alive = false;
+      o.visible = false;
+      balloonHits++;
+      penalty += CONFIG.PENALTY_BALLOON;
+      plane.speed *= CONFIG.HIT_SPEED_RATE;
+      showPopup('気球にドカン！ 減速＋' + CONFIG.PENALTY_BALLOON + '秒', '#ff8a65');
+      playBalloonSound();
+    }
+  }
+}
+
+// 全部のゲートのあと、ゴールラインを越えたらゴール
+function checkGoal(prev) {
+  if (nextGate < gates.length) return;
+  if (prev.z > goalPos.z && plane.pos.z <= goalPos.z) {
+    finalTime = totalTime();
+    phase = 'goal';
+    goalTimer = 0;
+    $('centerMsg').textContent = 'GOAL!!';
+    stopBGM('cut');        // スリリングなBGMをピタッと止めて
+    playGoalSound();       // 「ジャジャーン！」
+    resetFighters();
+    $('marker').style.display = 'none';
+  }
+}
+
+// 地面に落ちた・エリアの外に出た
+function checkCrash() {
+  const p = plane.pos;
+  // 上級の嵐では、荒波の高さもふくめて判定する
+  const sea = levelKey === 'hard' ? waveHeight(p.x, p.z) : 0;
+  if (p.y < CONFIG.GROUND_LIMIT_Y + sea) {
+    return gameOver(sea > 1 ? '荒波にのみこまれてしまいました…' : '地面（海）に墜落してしまいました…');
+  }
+  if (Math.abs(p.x) > CONFIG.AREA_LIMIT_X || p.y > CONFIG.CEILING_Y || p.z > CONFIG.BACK_LIMIT_Z) {
+    return gameOver('エリアの外に出てしまいました…');
+  }
+  // 危ないときは警告を出す
+  const danger = Math.abs(p.x) > CONFIG.AREA_LIMIT_X - 40 || p.y > CONFIG.CEILING_Y - 30 ||
+                 p.y < 12 || p.z > CONFIG.BACK_LIMIT_Z - 60;
+  $('warning').style.display = danger ? 'block' : 'none';
+}
+
+function gameOver(reason) {
+  phase = 'gameover';
+  stopBGM(true);
+  resetFighters();
+  planeMesh.visible = false;
+  $('warning').style.display = 'none';
+  $('marker').style.display = 'none';
+  $('gameoverReason').textContent = reason;
+  setTimeout(() => { if (phase === 'gameover') { $('hud').style.display = 'none'; showScreen('gameoverScreen'); } }, 600);
+}
+
+// =====================================================================
+// 12-2. 戦闘機と機関砲
+//   前から戦闘機が向かってきて、赤く光る弾（トレーサー）を撃ってくる
+// =====================================================================
+let fighters = [];       // いま飛んでいる戦闘機
+let bullets = [];        // いま飛んでいる弾
+let fighterTimer = 0;    // 次の戦闘機が来るまでの時間
+let invincible = 0;      // 当たったあとの「当たらない時間」の残り
+let gunHits = 0;         // 弾に当たった回数
+let shootDowns = 0;      // 撃墜した数
+let playerBullets = [];  // 自分が撃った弾
+let explosions = [];     // 爆発のけむり・火の玉
+let missiles = [];       // いま飛んでいるミサイル
+let smokePuffs = [];     // ミサイルのうしろのけむり
+let missileTimer = 0;    // 次のミサイルが来るまでの時間
+let salvoLeft = 0;       // 一斉発射で、まだ撃っていないミサイルの数
+let salvoTimer = 0;      // 一斉発射の1本ごとの間隔
+let missileDowns = 0;    // ミサイルを撃ち落とした数
+let alarmTimer = 0;      // ミサイル警報の音の間隔
+let playerFireTimer = 0; // 次の弾を撃てるまでの時間
+let cameraShake = 0;     // 画面のゆれの強さ
+
+// --- 戦闘機の模型（灰色の機体に赤い機首。1回だけ作って、あとはコピーして使う） ---
+function buildFighterModel() {
+  const g = new THREE.Group();
+  const gray = shiny(0x55606b), dark = shiny(0x2b313a), red = shiny(0xd32f2f);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.6, 8, 12), gray);
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.6, 2.2, 12), red);
+  nose.rotation.x = -Math.PI / 2;           // とがった方を前（-z）に向ける
+  nose.position.z = -5.1;
+  g.add(nose);
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 10),
+    new THREE.MeshPhongMaterial({ color: 0x1a2a40, shininess: 150, specular: 0xffffff }));
+  canopy.scale.set(1, 0.9, 2.6);
+  canopy.position.set(0, 0.65, -2);
+  g.add(canopy);
+  mirrorPair([[0.6, 1.0], [4.4, -1.6], [4.4, -2.3], [0.6, -1.6]], 0.15, gray).forEach(w => g.add(w));  // 後ろに流れた主翼
+  mirrorPair([[3.7, -1.2], [4.4, -1.6], [4.4, -2.3], [3.7, -2.0]], 0.2, red).forEach(w => g.add(w));  // 翼の先の赤
+  mirrorPair([[0.5, -2.6], [2.3, -3.6], [2.3, -4.1], [0.5, -4.0]], 0.1, gray).forEach(w => g.add(w)); // 水平尾翼
+  for (const side of [-1, 1]) {             // 2枚の垂直尾翼（少し外にかたむける）
+    const fin = finPart([[-1.6, 0.4], [-3.2, 2.2], [-3.9, 2.2], [-3.7, 0.4]], 0.1, dark);
+    fin.position.x = side * 0.6;
+    fin.rotation.z = -side * 0.25;
+    g.add(fin);
+  }
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(0.6, 12),   // うしろのエンジンの光
+    new THREE.MeshBasicMaterial({ color: 0xff9a3c, fog: false }));
+  glow.position.z = 4.05;
+  g.add(glow);
+  g.scale.setScalar(1.2);
+  return g;
+}
+const fighterModel = buildFighterModel();
+
+// --- 弾の形と色（全部の弾で共通） ---
+function glowMat(color, opacity) {
+  return new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false });   // 光っているように見える設定
+}
+const bulletCoreGeo = new THREE.CylinderGeometry(0.2, 0.2, 3, 6);      // 弾のしん（白っぽく光る）
+const bulletGlowGeo = new THREE.CylinderGeometry(0.6, 0.6, 5, 8);      // 弾のまわりの赤い光
+const tracerGeo = new THREE.CylinderGeometry(0.5, 0.02, 24, 8);        // うしろにのびる光の尾
+tracerGeo.translate(0, -10, 0);                                        // 尾が弾のうしろ側にのびるように
+const bulletCoreMat = glowMat(0xfff4d0, 1);
+const bulletGlowMat = glowMat(0xff2a10, 0.75);
+const tracerMat = glowMat(0xff3a1a, 0.35);
+const UP = new THREE.Vector3(0, 1, 0);
+
+// 全部の戦闘機と弾を消す（スタート・ゴール・タイトルにもどるときなど）
+function resetFighters() {
+  fighters.forEach(f => scene.remove(f));
+  bullets.forEach(b => scene.remove(b));
+  fighters = []; bullets = [];
+  fighterTimer = CONFIG.FIGHTER_START_TIME;
+  invincible = 0;
+  cameraShake = 0;
+  playerBullets.forEach(b => scene.remove(b));
+  explosions.forEach(e => scene.remove(e));
+  missiles.forEach(m => scene.remove(m));
+  smokePuffs.forEach(m => { scene.remove(m); m.material.dispose(); });
+  missiles = []; smokePuffs = [];
+  missileTimer = CONFIG.MISSILE_START_TIME;
+  salvoLeft = 0; salvoTimer = 0;
+  alarmTimer = 0;
+  $('missileWarn').style.display = 'none';
+  playerBullets = []; explosions = [];
+  playerFireTimer = 0;
+  if (typeof planeMesh !== 'undefined' && phase !== 'gameover') planeMesh.visible = true;
+  $('enemyWarn').style.display = 'none';
+}
+
+// 自分の機体の向き（水平方向の前と右）
+function planeAxes() {
+  const fwd = new THREE.Vector3(-Math.sin(plane.yaw), 0, -Math.cos(plane.yaw));
+  const right = new THREE.Vector3(Math.cos(plane.yaw), 0, -Math.sin(plane.yaw));
+  return { fwd: fwd, right: right };
+}
+
+// 戦闘機を1機、前のほうに出す
+function spawnFighter() {
+  const ax = planeAxes();
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const pos = plane.pos.clone()
+    .addScaledVector(ax.fwd, CONFIG.FIGHTER_DISTANCE)
+    .addScaledVector(ax.right, side * rand(15, 45));       // 少し横にずらして、正面衝突しにくくする
+  pos.x = clamp(pos.x, -CONFIG.AREA_LIMIT_X + 20, CONFIG.AREA_LIMIT_X - 20);
+  pos.y = clamp(plane.pos.y + rand(-12, 25), 20, 150);
+  const f = fighterModel.clone();
+  f.position.copy(pos);
+  f.userData.vel = ax.fwd.clone().multiplyScalar(-level.fighterSpeed);  // 自分に向かってまっすぐ飛ぶ
+  f.lookAt(pos.clone().sub(f.userData.vel));                         // 機首を進む方向に向ける
+  f.userData.fireTimer = rand(0.2, 0.8);
+  f.userData.burstLeft = 0;
+  f.userData.life = 0;
+  // 撃つときに光る、銃口の光
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 6), glowMat(0xffd27a, 1));
+  flash.position.z = -6.6 / 1.2;
+  flash.visible = false;
+  f.add(flash);
+  f.userData.flash = flash;
+  scene.add(f);
+  fighters.push(f);
+}
+
+// 戦闘機から自分に向けて弾を1発撃つ
+function fireBullet(f) {
+  const muzzle = new THREE.Vector3(0, 0, -6.6 / 1.2);
+  f.localToWorld(muzzle);
+  const s = level.aimSpread;
+  const aim = plane.pos.clone().add(new THREE.Vector3(rand(-s, s), rand(-s, s), rand(-s, s)));
+  const dir = aim.sub(muzzle).normalize();
+  const b = new THREE.Group();
+  b.add(new THREE.Mesh(tracerGeo, tracerMat));
+  b.add(new THREE.Mesh(bulletGlowGeo, bulletGlowMat));
+  b.add(new THREE.Mesh(bulletCoreGeo, bulletCoreMat));
+  b.position.copy(muzzle);
+  b.quaternion.setFromUnitVectors(UP, dir);    // 弾を進む方向に向ける
+  b.userData.vel = dir.multiplyScalar(level.bulletSpeed);
+  b.userData.life = CONFIG.BULLET_LIFE;
+  scene.add(b);
+  bullets.push(b);
+  f.userData.flash.visible = true;
+  playGunSound(f.position.distanceTo(plane.pos));
+}
+
+// 「点」と「線分」のいちばん近い距離（速い弾がすり抜けないように、動いた線で調べる）
+function distToSegment(p, a, b) {
+  const ab = b.clone().sub(a);
+  const t = clamp(p.clone().sub(a).dot(ab) / Math.max(ab.lengthSq(), 1e-6), 0, 1);
+  return a.clone().addScaledVector(ab, t).distanceTo(p);
+}
+
+// 弾や戦闘機に当たったとき
+function onGunHit(message) {
+  invincible = CONFIG.INVINCIBLE_TIME;
+  gunHits++;
+  penalty += CONFIG.GUN_PENALTY;
+  plane.speed *= CONFIG.GUN_SPEED_RATE;     // スピードがガクッと落ちる
+  cameraShake = 0.8;
+  showPopup(message + ' 減速＋' + CONFIG.GUN_PENALTY + '秒', '#ff5252');
+  playGunHitSound();
+  const fl = $('hitFlash');                  // 画面のふちを赤く光らせる
+  fl.classList.remove('show');
+  void fl.offsetWidth;
+  fl.classList.add('show');
+}
+
+// 毎フレームの戦闘機と弾の処理（prevPlane は動く前の自分の位置）
+function updateFighters(dt, prevPlane) {
+  const ax = planeAxes();
+
+  // 当たったあとは、しばらく点滅して当たらない
+  if (invincible > 0) {
+    invincible -= dt;
+    planeMesh.visible = invincible <= 0 || Math.floor(invincible * 12) % 2 === 0;
+  }
+
+  // 新しい戦闘機を出す（全部のゲートを通ったあとは出さない）
+  fighterTimer -= dt;
+  if (fighterTimer <= 0 && nextGate < gates.length) {
+    if (fighters.length < level.maxFighters) spawnFighter();
+    fighterTimer = level.fighterInterval * rand(0.7, 1.3);
+  }
+
+  // 戦闘機を動かして、近づいたら撃たせる
+  let warn = false;
+  for (let i = fighters.length - 1; i >= 0; i--) {
+    const f = fighters[i], u = f.userData;
+    u.life += dt;
+    f.position.addScaledVector(u.vel, dt);
+    u.flash.visible = false;
+    const to = f.position.clone().sub(plane.pos);
+    const ahead = to.dot(ax.fwd);             // 自分のどれくらい前にいるか（マイナスなら後ろ）
+    const dist = to.length();
+    if (ahead > 0) warn = true;
+    // 前にいて、射程に入ったら連射する
+    if (ahead > 60 && dist < level.fireRange) {
+      u.fireTimer -= dt;
+      if (u.fireTimer <= 0) {
+        if (u.burstLeft <= 0) u.burstLeft = level.burst;   // 連射をはじめる
+        fireBullet(f);
+        u.burstLeft--;
+        u.fireTimer = u.burstLeft > 0 ? 0.1 : level.fireInterval;  // 連射中は0.1秒おき
+      }
+    }
+    // 戦闘機そのものにぶつかった
+    if (invincible <= 0 && dist < 6) onGunHit('戦闘機と接触！');
+    // 後ろに通りすぎたら消す
+    if (ahead < -150 || u.life > 25) {
+      scene.remove(f);
+      fighters.splice(i, 1);
+    }
+  }
+  $('enemyWarn').style.display = warn ? 'block' : 'none';
+
+  // 弾を動かして、当たったか調べる
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    const before = b.position.clone();
+    b.position.addScaledVector(b.userData.vel, dt);
+    b.userData.life -= dt;
+    // 自分も動いているので、「自分から見た弾の動き」の線で調べる
+    const relA = before.sub(prevPlane);
+    const relB = b.position.clone().sub(plane.pos);
+    let remove = b.userData.life <= 0 || b.position.y < 0;
+    if (!remove && invincible <= 0 && distToSegment(new THREE.Vector3(), relA, relB) < CONFIG.GUN_HIT_SIZE) {
+      onGunHit('被弾！');
+      remove = true;
+    }
+    if (remove) {
+      scene.remove(b);
+      bullets.splice(i, 1);
+    }
+  }
+
+  // --- 自分の機関砲（Zキー） ---
+  playerFireTimer -= dt;
+  if (keys.KeyZ && playerFireTimer <= 0) {
+    firePlayerBullet();
+    playerFireTimer = CONFIG.PLAYER_FIRE_INTERVAL;
+  }
+  updateMissiles(dt, prevPlane);
+  updatePlayerBullets(dt);
+  updateExplosions(dt);
+}
+
+// 自分の機体の向き（上下の向きもふくむ、まっすぐ前）
+function planeForward3D() {
+  const cp = Math.cos(plane.pitch);
+  return new THREE.Vector3(-Math.sin(plane.yaw) * cp, Math.sin(plane.pitch), -Math.cos(plane.yaw) * cp);
+}
+
+// 自分の弾の色（黄色。敵の赤い弾と見分けられるように）
+const playerCoreMat = glowMat(0xffffe8, 1);
+const playerGlowMat = glowMat(0xffc400, 0.75);
+const playerTracerMat = glowMat(0xffd54f, 0.35);
+
+// 機首から前に弾を1発撃つ
+function firePlayerBullet() {
+  const dir = planeForward3D();
+  const b = new THREE.Group();
+  b.add(new THREE.Mesh(tracerGeo, playerTracerMat));
+  b.add(new THREE.Mesh(bulletGlowGeo, playerGlowMat));
+  b.add(new THREE.Mesh(bulletCoreGeo, playerCoreMat));
+  b.position.copy(plane.pos).addScaledVector(dir, 6);   // 機首の少し先から
+  b.quaternion.setFromUnitVectors(UP, dir);
+  b.userData.vel = dir.multiplyScalar(plane.speed + CONFIG.PLAYER_BULLET_SPEED);
+  b.userData.life = CONFIG.PLAYER_BULLET_LIFE;
+  scene.add(b);
+  playerBullets.push(b);
+  playPlayerGunSound();
+}
+
+// 自分の弾を動かして、戦闘機に当たったか調べる
+function updatePlayerBullets(dt) {
+  for (let i = playerBullets.length - 1; i >= 0; i--) {
+    const b = playerBullets[i];
+    const before = b.position.clone();
+    b.position.addScaledVector(b.userData.vel, dt);
+    b.userData.life -= dt;
+    let remove = b.userData.life <= 0 || b.position.y < 0;
+    // ミサイルに当たったか（1発で撃ち落とせる）
+    for (let j = missiles.length - 1; j >= 0 && !remove; j--) {
+      if (distToSegment(missiles[j].position, before, b.position) < CONFIG.MISSILE_SHOOT_SIZE) {
+        remove = true;
+        shootDownMissile(j);
+      }
+    }
+    for (let j = fighters.length - 1; j >= 0 && !remove; j--) {
+      const f = fighters[j];
+      if (distToSegment(f.position, before, b.position) < CONFIG.FIGHTER_HIT_SIZE) {
+        remove = true;
+        f.userData.hp = (f.userData.hp === undefined ? CONFIG.FIGHTER_HP : f.userData.hp) - 1;
+        if (f.userData.hp <= 0) {
+          shootDown(f, j);                     // 撃墜！
+        } else {
+          makeExplosion(b.position, 1.5, 0.25); // 当たった火花
+          playFighterHitSound();
+        }
+      }
+    }
+    if (remove) {
+      scene.remove(b);
+      playerBullets.splice(i, 1);
+    }
+  }
+}
+
+// =====================================================================
+// 12-3. ミサイル（前から飛んできて、少しずつ自分を追いかけてくる）
+// =====================================================================
+// ミサイルの模型（白い胴体に赤い先っぽ。前が -z）
+function buildMissileModel() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 4, 10), shiny(0xeeeeee));
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.2, 10), shiny(0xd50000));
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -2.6;
+  g.add(nose);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.37, 0.3, 10), shiny(0xffc400));
+  band.rotation.x = Math.PI / 2;
+  band.position.z = -1.2;
+  g.add(band);
+  for (let i = 0; i < 4; i++) {           // うしろの4枚のはね
+    const fin = box(0.08, 1.1, 0.9, 0x9e9e9e, 0, 0, 1.6);
+    fin.geometry.translate(0, 0.55, 0);
+    fin.rotation.z = i * Math.PI / 2;
+    g.add(fin);
+  }
+  const fire = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), glowMat(0xffa040, 1));  // うしろの炎
+  fire.scale.set(1, 1, 2.2);
+  fire.position.z = 2.5;
+  g.add(fire);
+  g.scale.setScalar(1.3);
+  return g;
+}
+const missileModel = buildMissileModel();
+const puffGeo = new THREE.SphereGeometry(0.9, 8, 6);
+
+// ミサイルを1本、前のほうに出す
+function spawnMissile() {
+  const ax = planeAxes();
+  const pos = plane.pos.clone()
+    .addScaledVector(ax.fwd, CONFIG.MISSILE_DISTANCE)
+    .addScaledVector(ax.right, rand(-60, 60));   // 横に広がって飛んでくる
+  pos.x = clamp(pos.x, -CONFIG.AREA_LIMIT_X + 20, CONFIG.AREA_LIMIT_X - 20);
+  pos.y = clamp(plane.pos.y + rand(-20, 30), 15, 160);
+  const m = missileModel.clone();
+  m.position.copy(pos);
+  m.userData.dir = plane.pos.clone().sub(pos).normalize();   // 自分のほうに向かって飛ぶ
+  m.userData.life = 0;
+  m.userData.puffTimer = 0;
+  m.userData.homing = true;
+  m.lookAt(pos.clone().sub(m.userData.dir));
+  scene.add(m);
+  missiles.push(m);
+  tone(900, 0, 0.12, 'square', 0.05, 1400);   // 発射の「ピュッ」
+}
+
+// ミサイルのけむりを1つ出す
+function addSmokePuff(pos) {
+  const puff = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({
+    color: 0xdddddd, transparent: true, opacity: 0.55, depthWrite: false }));
+  puff.position.copy(pos);
+  puff.userData.age = 0;
+  scene.add(puff);
+  smokePuffs.push(puff);
+}
+
+// 毎フレームのミサイルの処理
+function updateMissiles(dt, prevPlane) {
+  const ax = planeAxes();
+
+  // 新しいミサイルを出す（全部のゲートを通ったあとは出さない）
+  missileTimer -= dt;
+  if (missileTimer <= 0 && nextGate < gates.length) {
+    salvoLeft = level.missileSalvo;           // 一斉発射をはじめる
+    missileTimer = level.missileInterval * rand(0.7, 1.3);
+  }
+  // 一斉発射：0.12秒おきに1本ずつ出す
+  salvoTimer -= dt;
+  if (salvoLeft > 0 && salvoTimer <= 0) {
+    if (missiles.length < level.maxMissiles) spawnMissile();
+    salvoLeft--;
+    salvoTimer = 0.12;
+  }
+
+  let warn = false;
+  for (let i = missiles.length - 1; i >= 0; i--) {
+    const m = missiles[i], u = m.userData;
+    u.life += dt;
+    const ahead = m.position.clone().sub(plane.pos).dot(ax.fwd);  // 自分のどれくらい前にいるか
+    // 自分より前にいるあいだは、少しずつ自分のほうへ曲がる（追いかけてくる）
+    if (u.homing) {
+      if (ahead < 15) u.homing = false;       // 通りすぎたら、もう追いかけない
+      const want = plane.pos.clone().sub(m.position).normalize();
+      u.dir.lerp(want, Math.min(1, level.missileTurn * dt)).normalize();
+      m.lookAt(m.position.clone().sub(u.dir));
+    }
+    const before = m.position.clone();
+    m.position.addScaledVector(u.dir, level.missileSpeed * dt);
+    if (ahead > 0 && ahead < 450) warn = true;
+
+    // うしろにけむりを出す
+    u.puffTimer -= dt;
+    if (u.puffTimer <= 0) {
+      addSmokePuff(m.position.clone().addScaledVector(u.dir, -3.5));
+      u.puffTimer = 0.04;
+    }
+
+    // 自分に当たったか（自分も動いているので「自分から見た動き」の線で調べる）
+    let remove = u.life > CONFIG.MISSILE_LIFE || ahead < -150 || m.position.y < 0;
+    const relA = before.sub(prevPlane);
+    const relB = m.position.clone().sub(plane.pos);
+    if (!remove && invincible <= 0 && distToSegment(new THREE.Vector3(), relA, relB) < CONFIG.MISSILE_HIT_SIZE) {
+      makeExplosion(m.position, 6, 0.6);
+      onGunHit('ミサイル命中！');
+      remove = true;
+    }
+    if (remove) {
+      scene.remove(m);
+      missiles.splice(i, 1);
+    }
+  }
+
+  // けむりをふくらませながら消していく
+  for (let i = smokePuffs.length - 1; i >= 0; i--) {
+    const p = smokePuffs[i];
+    p.userData.age += dt;
+    const k = p.userData.age / 1.2;
+    p.scale.setScalar(1 + k * 2.5);
+    p.material.opacity = 0.55 * Math.max(0, 1 - k);
+    if (k >= 1) {
+      scene.remove(p);
+      p.material.dispose();
+      smokePuffs.splice(i, 1);
+    }
+  }
+
+  // ミサイル警報（表示と「ピピピ」という音）
+  $('missileWarn').style.display = warn ? 'block' : 'none';
+  alarmTimer -= dt;
+  if (warn && alarmTimer <= 0) {
+    tone(1600, 0, 0.07, 'square', 0.05);
+    tone(1600, 0.1, 0.07, 'square', 0.05);
+    alarmTimer = 0.5;
+  }
+}
+
+// ミサイルを撃ち落としたとき：小爆発＋ドカン！
+function shootDownMissile(index) {
+  const m = missiles[index];
+  makeExplosion(m.position, 5, 0.5);            // 小爆発
+  makeExplosion(m.position, 2.5, 0.25);         // まんなかの強い光
+  scene.remove(m);
+  missiles.splice(index, 1);
+  missileDowns++;
+  bonus += CONFIG.MISSILE_BONUS;
+  showPopup('ミサイル撃墜！ −' + CONFIG.MISSILE_BONUS + '秒', '#ffeb3b');
+  playMissileBoomSound();
+}
+
+// 戦闘機を撃墜したとき
+function shootDown(f, index) {
+  makeExplosion(f.position, 9, 0.9);
+  scene.remove(f);
+  fighters.splice(index, 1);
+  shootDowns++;
+  bonus += CONFIG.SHOOTDOWN_BONUS;
+  showPopup('撃墜！ −' + CONFIG.SHOOTDOWN_BONUS + '秒', '#ffeb3b');
+  playExplosionSound();
+}
+
+// 爆発（オレンジの火の玉が広がって、灰色のけむりになって消える）
+function makeExplosion(pos, size, time) {
+  const e = new THREE.Group();
+  const fire = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), glowMat(0xff8a1f, 1));
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.6, 10, 8), glowMat(0xfff3a0, 1));
+  e.add(fire, core);
+  if (size > 3) {
+    const smoke = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0x555555, transparent: true, opacity: 0.6, depthWrite: false }));
+    e.add(smoke);
+    e.userData.smoke = smoke;
+  }
+  e.position.copy(pos);
+  e.userData = Object.assign(e.userData, { fire: fire, core: core, size: size, time: time, age: 0 });
+  scene.add(e);
+  explosions.push(e);
+}
+
+function updateExplosions(dt) {
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const e = explosions[i], u = e.userData;
+    u.age += dt;
+    const k = u.age / u.time;                     // 0 → 1 に進む
+    u.fire.scale.setScalar(u.size * (0.3 + k));
+    u.core.scale.setScalar(u.size * 0.6 * (1 - k));
+    u.fire.material.opacity = Math.max(0, 1 - k);
+    if (u.smoke) {
+      u.smoke.scale.setScalar(u.size * (0.5 + k * 1.3));
+      u.smoke.material.opacity = 0.6 * Math.max(0, 1 - k * 0.8);
+    }
+    if (k >= 1.3) {
+      scene.remove(e);
+      explosions.splice(i, 1);
+    }
+  }
+}
+
+// 照準（自分の弾が飛んでいく先）を画面に出す
+function updateCrosshair() {
+  const el = $('crosshair');
+  if (phase !== 'fly' || paused) { el.style.display = 'none'; return; }
+  const p = plane.pos.clone().addScaledVector(planeForward3D(), 150).project(camera);
+  el.style.display = 'block';
+  el.style.left = ((p.x * 0.5 + 0.5) * window.innerWidth) + 'px';
+  el.style.top = ((-p.y * 0.5 + 0.5) * window.innerHeight) + 'px';
+}
+
+// =====================================================================
+// 13. 結果画面とランキング
+// =====================================================================
+let memoryRanking = {};  // 保存できないブラウザ用の予備（難易度ごと）
+
+// ランキングは難易度ごとに別々に保存する
+function loadRanking(k) {
+  try {
+    const s = localStorage.getItem(CONFIG.RANKING_KEY + '_' + k);
+    const list = s ? JSON.parse(s) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return (memoryRanking[k] || []).slice();
+  }
+}
+function saveRanking(k, list) {
+  memoryRanking[k] = list.slice();
+  try { localStorage.setItem(CONFIG.RANKING_KEY + '_' + k, JSON.stringify(list)); } catch (e) { /* 保存できなくても続ける */ }
+}
+
+function getRank(t) {
+  if (t <= CONFIG.RANK_S) return 'S';
+  if (t <= CONFIG.RANK_A) return 'A';
+  if (t <= CONFIG.RANK_B) return 'B';
+  return 'C';
+}
+
+// 秒を「1:23.45」の形にする
+function formatTime(t) {
+  const m = Math.floor(t / 60);
+  const s = t - m * 60;
+  return m + ':' + s.toFixed(2).padStart(5, '0');
+}
+
+function showResult() {
+  phase = 'result';
+  $('hud').style.display = 'none';
+  const rank = getRank(finalTime);
+
+  // ランキングに追加して、速い順に並べる
+  const before = loadRanking(levelKey);
+  const isBest = before.length === 0 || finalTime < before[0].time;
+  const entry = { time: finalTime, rank: rank, date: new Date().toLocaleDateString('ja-JP'), id: Date.now() };
+  const list = before.concat([entry]).sort((a, b) => a.time - b.time).slice(0, CONFIG.RANKING_SIZE);
+  saveRanking(levelKey, list);
+  const place = list.findIndex(e => e.id === entry.id) + 1;
+
+  $('resultTime').textContent = 'TIME ' + formatTime(finalTime);
+  $('resultDetail').innerHTML = '【' + level.name + '】 飛行 ' + formatTime(elapsed) +
+    ' ＋ ペナルティ ' + penalty + '秒 − ボーナス ' + bonus + '秒（パーフェクト・撃墜）<br>' +
+    'パーフェクト ' + perfectCount + ' ／ 成功 ' + (passCount - perfectCount) + ' ／ 衝突 ' + hitCount +
+    ' ／ 失敗 ' + missCount + ' ／ 被弾 ' + gunHits + ' ／ 撃墜 ' + shootDowns + ' ／ ミサイル撃墜 ' + missileDowns + (level.obstacles > 0 ? ' ／ 気球 ' + balloonHits : '');
+  $('resultRank').textContent = rank;
+  $('resultRank').className = 'rank' + rank;
+  $('newBest').textContent = isBest ? '★ 自己ベスト更新！ ★' : '';
+  $('resultPlace').textContent = place > 0 ? '今回の順位：' + place + '位' : '今回の順位：ランク外（TOP' + CONFIG.RANKING_SIZE + 'に入れず）';
+
+  let html = '<tr><td colspan="4"><b>' + level.name + ' ハイスコア・ランキング TOP' + CONFIG.RANKING_SIZE + '</b></td></tr>';
+  list.forEach((e, i) => {
+    html += '<tr class="' + (e.id === entry.id ? 'me' : '') + '"><td>' + (i + 1) + '位</td><td>' +
+      formatTime(e.time) + '</td><td class="rank' + e.rank + '">' + e.rank + '</td><td>' + (e.date || '') + '</td></tr>';
+  });
+  $('rankingTable').innerHTML = html;
+  showScreen('resultScreen');
+}
+
+// =====================================================================
+// 14. カメラの動き
+// =====================================================================
+function updateCamera(dt) {
+  // ブースト中は視野を広げて、スピード感を出す
+  const targetFov = (phase === 'fly' && keys.Space) ? CONFIG.BOOST_FOV : CONFIG.NORMAL_FOV;
+  if (Math.abs(camera.fov - targetFov) > 0.05) {
+    camera.fov += (targetFov - camera.fov) * Math.min(1, 4 * dt);
+    camera.updateProjectionMatrix();
+  }
+  if (phase === 'title' || phase === 'howto') {
+    // タイトル中：空母のまわりをゆっくり回る
+    const a = worldTime * 0.2;
+    camera.position.set(Math.cos(a) * 90, 40, Math.sin(a) * 90);
+    camera.lookAt(0, 14, 0);
+    snapCamera = true;
+    return;
+  }
+  if (phase === 'goal' || (phase === 'result' && flagger)) {
+    // ゴール：旗をふるキャラクターをアップで映す
+    const c = flagger.position;
+    camera.position.set(c.x - 30, 18, c.z + 45);
+    camera.lookAt(c.x - 6, 12, c.z);
+    return;
+  }
+  // 飛行中：機体の後ろから追いかける
+  const back = new THREE.Vector3(Math.sin(plane.yaw) * CONFIG.CAMERA_DISTANCE, CONFIG.CAMERA_HEIGHT,
+                                 Math.cos(plane.yaw) * CONFIG.CAMERA_DISTANCE);
+  const desired = plane.pos.clone().add(back);
+  if (snapCamera) { camera.position.copy(desired); snapCamera = false; }
+  else camera.position.lerp(desired, 1 - Math.exp(-5 * dt));
+  const look = plane.pos.clone().add(new THREE.Vector3(-Math.sin(plane.yaw) * 15, 2, -Math.cos(plane.yaw) * 15));
+  camera.lookAt(look);
+  // 弾に当たった直後は、画面をガタガタゆらす
+  if (cameraShake > 0) {
+    camera.position.x += rand(-1, 1) * cameraShake;
+    camera.position.y += rand(-1, 1) * cameraShake;
+    cameraShake = Math.max(0, cameraShake - dt * 2);
+  }
+}
+
+// =====================================================================
+// 15. かざりのアニメーション（気球・旗・次のゲートの点滅）
+// =====================================================================
+function animateDecor() {
+  balloons.forEach(b => { b.position.y = b.userData.baseY + Math.sin(worldTime * 0.6 + b.userData.phase) * 3; });
+  // 上級のじゃま気球：左右・上下にゆらゆら動いてコースをふさぐ
+  obstacles.forEach(o => {
+    const u = o.userData, t = worldTime * u.speed + u.phase;
+    o.position.x = u.base.x + Math.sin(t) * level.obstacleMove;
+    o.position.y = Math.max(12, u.base.y + Math.sin(t * 1.3) * 8);
+  });
+  if (flagger) {
+    const tail = flagger.userData.tail, bird = flagger.userData.bird;
+    if (phase === 'goal' || phase === 'result') {
+      // ゴール：しっぽで旗を大きくふりながら、ぴょんぴょんはねる
+      tail.rotation.z = 0.15 + Math.sin(worldTime * 8) * 0.55;
+      tail.rotation.y = Math.sin(worldTime * 8 + 1) * 0.3;
+      bird.position.y = Math.abs(Math.sin(worldTime * 6)) * 0.6;
+    } else {
+      // ふだん：しっぽがゆらゆら
+      tail.rotation.z = Math.sin(worldTime * 2) * 0.12;
+      tail.rotation.y = 0;
+      bird.position.y = 0;
+    }
+  }
+  // 上級の海の波もようを、ゆっくり流してゆらめかせる
+  if (oceanTexture && oceanGroup.visible) {
+    oceanTexture.offset.x = Math.sin(worldTime * 0.3) * 0.05;
+    oceanTexture.offset.y = oceanScroll;
+  }
+  // 上級のゲートは、ゆっくり回る（形は丸いので、くぐりやすさは変わらない）
+  gates.forEach((g, i) => { if (g.userData.spin) g.rotation.z = worldTime * 0.4 + i; });
+  // 嵐のときは、まだ通っていないゲートを全部光らせる（暗い嵐の中でも見えるように）
+  const storm = clamp(weatherLevel - 1, 0, 1) * CONFIG.STORM_GATE_GLOW;
+  gates.forEach((g, i) => {
+    const u = g.userData;
+    if (u.state === 'done') return;
+    const pulse = 0.85 + 0.15 * Math.sin(worldTime * 4 + i);
+    const sr = u.stormRed, sw = u.stormWhite;
+    u.red.emissive.setRGB(sr[0] * storm, sr[1] * storm, sr[2] * storm);     // 輪そのものが光る
+    u.white.emissive.setRGB(sw[0] * storm, sw[1] * storm, sw[2] * storm);
+    u.halo.visible = storm > 0.01;                                         // まわりの光のわ
+    u.halo.material.opacity = Math.min(1, storm * 0.75 * pulse);
+    u.ring.material.opacity = Math.min(1, 0.5 + 0.45 * storm);             // パーフェクトの輪も明るく
+    if (u.outer) u.outer.material.opacity = Math.min(1, 0.85 + 0.15 * storm);
+    if (u.bulbs) u.bulbs.forEach(b => b.scale.setScalar(1 + storm * 0.9 * pulse));   // 上級のライトを大きく
+  });
+  // 次のゲートを光らせて目立たせる
+  if (nextGate < gates.length && (phase === 'fly' || phase === 'launch' || phase === 'ready')) {
+    const g = gates[nextGate];
+    const k = 0.3 + 0.3 * Math.sin(worldTime * 6);
+    const c = g.userData.glow;                       // 初級は黄色、上級は水色に光る
+    const sr = g.userData.stormRed, sw = g.userData.stormWhite;
+    g.userData.red.emissive.setRGB(k * c[0] + sr[0] * storm, k * c[1] + sr[1] * storm, k * c[2] + sr[2] * storm);
+    g.userData.white.emissive.setRGB(k * c[0] + sw[0] * storm, k * c[1] + sw[1] * storm, k * c[2] + sw[2] * storm);
+    g.userData.halo.material.opacity = Math.min(1, storm * (0.75 + 0.25 * Math.sin(worldTime * 6)) + storm * 0.2);
+    g.scale.setScalar(1 + 0.05 * Math.sin(worldTime * 6));
+  }
+}
+
+// =====================================================================
+// 15-2. 天気（コースの最初1/3は晴れ → 中盤1/3は小雨 → 終盤1/3は嵐）
+// =====================================================================
+let weatherLevel = 0;    // いまの天気（0=晴れ 1=小雨 2=嵐。あいだの数字は切りかわり中）
+let weatherTarget = 0;   // コースの場所から決まる、目標の天気
+let ctrlTurn = 0, ctrlUp = 0;   // 天気で重くなった操作の量
+let windY = 0, windX = 0, gust = 0, gustTimer = 3;   // 風
+let lightningTimer = 3, lightningFlash = 0, bolt = null, boltTime = 0;  // 稲光
+let lastCamPos = new THREE.Vector3();
+const screenDrops = [];  // 画面についた水滴
+const WEATHER_NAMES = ['☀ 晴れ', '🌧 小雨', '⛈ 嵐'];
+
+// 天気に合わせて数字を混ぜる（a=晴れ b=小雨 c=嵐 のときの値）
+function wmix(a, b, c) {
+  const t = weatherLevel;
+  return t <= 1 ? a + (b - a) * t : b + (c - b) * (t - 1);
+}
+const SKY_SUNNY = new THREE.Color(0x9fd8ff), SKY_RAIN = new THREE.Color(0x7d8b96), SKY_STORM = new THREE.Color(0x262b35);
+function weatherSkyColor(out) {
+  const t = weatherLevel;
+  return t <= 1 ? out.copy(SKY_SUNNY).lerp(SKY_RAIN, t) : out.copy(SKY_RAIN).lerp(SKY_STORM, t - 1);
+}
+
+// --- 降ってくる雨（3D の細い線をカメラのまわりにたくさん描く） ---
+const RAIN_MAX = 1800;
+const rainGeo = new THREE.BufferGeometry();
+rainGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(RAIN_MAX * 6), 3));
+const rainDrops = [];
+for (let i = 0; i < RAIN_MAX; i++) rainDrops.push(new THREE.Vector3(rand(-70, 70), rand(-40, 60), rand(-70, 70)));
+const rainLines = new THREE.LineSegments(rainGeo,
+  new THREE.LineBasicMaterial({ color: 0xc0d4e8, transparent: true, opacity: 0.55 }));
+rainLines.frustumCulled = false;
+rainLines.visible = false;
+scene.add(rainLines);
+
+// --- 嵐の暗雲（空の高いところに広がる、黒っぽい雲） ---
+const cloudMat = new THREE.MeshLambertMaterial({ color: 0x2c3038, transparent: true, opacity: 0, depthWrite: false });
+const cloudGroup = new THREE.Group();
+const cloudGeo = new THREE.SphereGeometry(1, 12, 8);
+for (let i = 0; i < 110; i++) {
+  const c = new THREE.Mesh(cloudGeo, cloudMat);
+  c.scale.set(rand(90, 170), rand(25, 50), rand(90, 170));
+  c.position.set(rand(-750, 750), rand(240, 320), rand(-9700, 250));
+  cloudGroup.add(c);
+}
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(3000, 12000), cloudMat);  // 空をおおう雲の天井
+ceiling.rotation.x = Math.PI / 2;
+ceiling.position.set(0, 340, -4700);
+cloudGroup.add(ceiling);
+cloudGroup.visible = false;
+scene.add(cloudGroup);
+
+const weatherCanvas = $('weatherCanvas');
+const wctx = weatherCanvas.getContext('2d');
+
+// 天気を晴れにもどす（スタートのとき）
+function resetWeather() {
+  weatherLevel = 0; weatherTarget = 0;
+  windY = 0; windX = 0; gust = 0; gustTimer = 3;
+  lightningTimer = 3; lightningFlash = 0; boltTime = 0;
+  screenDrops.length = 0;
+}
+
+// コースのどのあたりにいるか（0=スタート 1=ゴール）
+function courseProgress() {
+  return clamp((DECK_END_Z - plane.pos.z) / (DECK_END_Z - goalPos.z), 0, 1);
+}
+
+// 毎フレームの天気の処理
+function updateWeather(dt) {
+  const inGame = ['ready', 'launch', 'fly', 'goal', 'result', 'gameover'].includes(phase);
+  if (!inGame) { weatherLevel = 0; weatherTarget = 0; }
+  else if (phase === 'fly' || phase === 'launch' || phase === 'ready') {
+    const prog = courseProgress();
+    const t = prog < 1 / 3 ? 0 : prog < 2 / 3 ? 1 : 2;
+    if (t !== weatherTarget && phase === 'fly') {
+      showPopup(t === 1 ? '🌧 雨が降ってきた…' : '⛈ 嵐だ！ 風に負けるな！', '#cfe8ff');
+    }
+    weatherTarget = t;
+  }
+  // 目標の天気に、少しずつ近づける
+  const step = dt / CONFIG.WEATHER_CHANGE_TIME;
+  weatherLevel += clamp(weatherTarget - weatherLevel, -step, step);
+  bgm.want = weatherTarget;   // BGM も天気に合わせる
+  updatePinch(dt);
+
+  // 空の色・霧・明るさ
+  const flash = lightningFlash > 0 ? lightningFlash : 0;
+  weatherSkyColor(scene.background);
+  scene.fog.color.copy(scene.background);
+  if (flash > 0) { scene.background.lerp(new THREE.Color(0xdfe6ff), flash * 0.5); }
+  scene.fog.near = wmix(350, 220, 120);
+  scene.fog.far = wmix(1600, 1000, 700);
+  hemi.intensity = wmix(0.9, 0.62, 0.38) + flash * 1.2;
+  sun.intensity = wmix(0.8, 0.35, 0.12) + flash * 0.6;
+
+  // 暗雲
+  const cloudOpacity = clamp(weatherLevel - 0.9, 0, 1.05) * 0.9;
+  cloudMat.opacity = cloudOpacity;
+  cloudGroup.visible = cloudOpacity > 0.01;
+
+  updateRain(dt);
+  updateScreenDrops(dt);
+  updateRoughSea(dt);
+
+  // 稲光（嵐のときだけ）
+  const storm = clamp(weatherLevel - 1, 0, 1);
+  if (storm > 0.5 && (phase === 'fly' || phase === 'goal')) {
+    lightningTimer -= dt;
+    if (lightningTimer <= 0) { triggerLightning(); lightningTimer = rand(2.5, 6); }
+  }
+  lightningFlash = Math.max(0, lightningFlash - dt * 2.5);
+  boltTime = Math.max(0, boltTime - dt);
+
+  // 画面左上の天気表示
+  let label = WEATHER_NAMES[weatherTarget];
+  if (storm > 0.3 && Math.abs(windY) > 3) label += windY > 0 ? '　風 ↑' : '　風 ↓';
+  $('hudWeather').textContent = label;
+}
+
+// 降ってくる雨を動かす
+function wrap(v, lo, hi) {
+  const w = hi - lo;
+  return ((v - lo) % w + w) % w + lo;
+}
+function updateRain(dt) {
+  const amount = clamp(wmix(0, 0.35, 1), 0, 1);
+  const count = Math.floor(RAIN_MAX * amount);
+  rainLines.visible = count > 0;
+  const camMove = camera.position.clone().sub(lastCamPos);
+  lastCamPos.copy(camera.position);
+  if (count === 0) return;
+  const fall = wmix(70, 70, 120);                 // 落ちる速さ
+  const slant = wmix(0, 6, 40) + windX * 2;       // 嵐では風で横なぐりになる
+  const flying = phase === 'launch' || phase === 'fly' || phase === 'goal';
+  const camVel = flying ? planeForward3D().multiplyScalar(plane.speed) : new THREE.Vector3();
+  const streak = new THREE.Vector3(slant, -fall, 0).sub(camVel).multiplyScalar(0.035);  // 雨のすじの長さ・向き
+  const arr = rainGeo.attributes.position.array;
+  for (let i = 0; i < count; i++) {
+    const d = rainDrops[i];
+    d.x = wrap(d.x + slant * dt - camMove.x, -70, 70);
+    d.y = wrap(d.y - fall * dt - camMove.y, -40, 60);
+    d.z = wrap(d.z - camMove.z, -70, 70);
+    const x = camera.position.x + d.x, y = camera.position.y + d.y, z = camera.position.z + d.z;
+    arr[i * 6] = x; arr[i * 6 + 1] = y; arr[i * 6 + 2] = z;
+    arr[i * 6 + 3] = x + streak.x; arr[i * 6 + 4] = y + streak.y; arr[i * 6 + 5] = z + streak.z;
+  }
+  rainGeo.setDrawRange(0, count * 2);
+  rainGeo.attributes.position.needsUpdate = true;
+  rainLines.material.opacity = wmix(0, 0.45, 0.65);
+}
+
+// 画面（風防）についた水滴を増やしたり、流したりする
+function updateScreenDrops(dt) {
+  const W = weatherCanvas.width, H = weatherCanvas.height;
+  const playing = phase === 'launch' || phase === 'fly' || phase === 'goal';
+  const rate = playing ? wmix(0, 7, 16) : 0;      // 1秒あたりの水滴の数
+  let n = rate * dt;
+  while (n > 0 && screenDrops.length < 140) {
+    if (Math.random() < n) {
+      // 画面のまんなかをさけて、ふちのほうに水滴をつける
+      let x, y, tries = 0;
+      do {
+        x = Math.random() * W; y = Math.random() * H; tries++;
+      } while (Math.pow((x - W / 2) / (W * 0.34), 2) + Math.pow((y - H / 2) / (H * 0.32), 2) < 1 && tries < 10);
+      screenDrops.push({ x: x, y: y, r: rand(4, 13), life: rand(2, 4), age: 0, vy: rand(4, 25) });
+    }
+    n -= 1;
+  }
+  const side = clamp(weatherLevel - 1, 0, 1) * 30;   // 嵐では横にも流れる
+  for (let i = screenDrops.length - 1; i >= 0; i--) {
+    const d = screenDrops[i];
+    d.age += dt;
+    d.y += d.vy * dt;
+    d.x += side * dt;
+    if (d.age > d.life) screenDrops.splice(i, 1);
+  }
+}
+
+// 稲光を起こす（ピカッ！ ゴロゴロ…）
+function triggerLightning() {
+  lightningFlash = 1;
+  boltTime = 0.35;
+  // 画面の上から下へ、ギザギザの光の線を作る
+  const pts = [];
+  let x = rand(0.12, 0.88), y = -0.02;
+  const end = rand(0.4, 0.6);
+  while (y < end) {
+    pts.push([x, y]);
+    x += rand(-0.04, 0.04);
+    y += rand(0.03, 0.07);
+  }
+  pts.push([x, end]);
+  const mid = pts[Math.floor(pts.length / 2)];      // とちゅうから枝分かれ
+  const branch = [[mid[0], mid[1]]];
+  let bx = mid[0], by = mid[1];
+  for (let i = 0; i < 4; i++) { bx += rand(0.01, 0.05) * (Math.random() < 0.5 ? -1 : 1); by += rand(0.03, 0.05); branch.push([bx, by]); }
+  bolt = { main: pts, branch: branch };
+  playThunderSound();
+}
+
+// 雷が落ちた音：「バリバリッ！ ゴロゴロゴロ…」
+//   低い音だけだとノートパソコンのスピーカーでは聞こえにくいので、
+//   「バリッ」という高めの音と、中くらいの高さの「ゴロゴロ」を重ねている
+function playThunderSound() {
+  const v = CONFIG.THUNDER_VOLUME;
+  const d = rand(0.05, 0.25);                                  // 光ってから少しだけおくれて鳴る
+  noiseBurst(d, 0.25, v * 0.8, 'highpass', 3500, 900, 0.002);  // バリッ（空気がさける音）
+  noiseBurst(d + 0.03, 0.4, v * 0.7, 'bandpass', 2200, 400, 0.003);
+  tone(180, d, 0.35, 'square', v * 0.15, 60);                  // ドンッ
+  // ゴロゴロ…（何回かに分けて、だんだん小さく・低くなる）
+  for (let i = 0; i < 4; i++) {
+    const t = d + 0.25 + i * rand(0.35, 0.55);
+    noiseBurst(t, 1.2, v * 0.6 * (1 - i * 0.2), 'lowpass', 1400 - i * 250, 120, 0.06);
+  }
+  tone(70, d + 0.2, 2.5, 'triangle', v * 0.3, 35);             // 地ひびき
+
+  // 雷が鳴っているあいだは BGM を少し小さくして、雷鳴がはっきり聞こえるようにする
+  if (sound.bgmGain && bgm.playing) {
+    const t = sound.ctx.currentTime, g = sound.bgmGain.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(CONFIG.BGM_VOLUME * 0.2, t + d + 0.05);   // 雷のあいだは BGM をぐっと小さく
+    g.setValueAtTime(CONFIG.BGM_VOLUME * 0.2, t + d + 2.2);
+    g.linearRampToValueAtTime(CONFIG.BGM_VOLUME, t + d + 3.4);
+  }
+}
+
+// 天気の画面効果を描く（暗さ・水滴・稲光）
+function drawWeather() {
+  const W = weatherCanvas.width, H = weatherCanvas.height;
+  wctx.clearRect(0, 0, W, H);
+  // 画面全体を少し暗くする
+  const dark = wmix(0, 0.14, 0.3);
+  if (dark > 0.005) {
+    wctx.fillStyle = 'rgba(8,12,24,' + dark + ')';
+    wctx.fillRect(0, 0, W, H);
+  }
+  // 水滴
+  for (const d of screenDrops) {
+    const a = Math.min(1, (d.life - d.age) / 0.6);     // 消えるときはうすくなる
+    const g = wctx.createRadialGradient(d.x - d.r * 0.3, d.y - d.r * 0.3, d.r * 0.1, d.x, d.y, d.r);
+    g.addColorStop(0, 'rgba(255,255,255,' + (0.05 * a) + ')');
+    g.addColorStop(0.7, 'rgba(200,220,255,' + (0.12 * a) + ')');
+    g.addColorStop(1, 'rgba(230,240,255,' + (0.45 * a) + ')');
+    wctx.fillStyle = g;
+    wctx.beginPath();
+    wctx.ellipse(d.x, d.y, d.r * 0.85, d.r, 0, 0, Math.PI * 2);
+    wctx.fill();
+    wctx.fillStyle = 'rgba(255,255,255,' + (0.6 * a) + ')';   // 光の反射
+    wctx.beginPath();
+    wctx.arc(d.x - d.r * 0.35, d.y - d.r * 0.4, d.r * 0.18, 0, Math.PI * 2);
+    wctx.fill();
+  }
+  // 稲光の線
+  if (boltTime > 0 && bolt && Math.random() > 0.15) {
+    wctx.save();
+    wctx.strokeStyle = 'rgba(235,240,255,0.95)';
+    wctx.shadowColor = '#9fc4ff';
+    wctx.shadowBlur = 25;
+    for (const line of [bolt.main, bolt.branch]) {
+      wctx.lineWidth = line === bolt.main ? 3.5 : 1.8;
+      wctx.beginPath();
+      line.forEach((p, i) => { const px = p[0] * W, py = p[1] * H; i ? wctx.lineTo(px, py) : wctx.moveTo(px, py); });
+      wctx.stroke();
+    }
+    wctx.restore();
+  }
+  // ピカッと画面全体が白く光る
+  if (lightningFlash > 0) {
+    wctx.fillStyle = 'rgba(230,235,255,' + (lightningFlash * 0.5 * (0.6 + 0.4 * Math.random())) + ')';
+    wctx.fillRect(0, 0, W, H);
+  }
+}
+
+// 嵐の風で、機体を上下・左右にあおる
+function applyWind(dt) {
+  const storm = clamp(weatherLevel - 1, 0, 1);
+  if (storm <= 0) { windY = 0; windX = 0; return; }
+  // ときどき強い突風が来る
+  gustTimer -= dt;
+  if (gustTimer <= 0) {
+    gust = (Math.random() < 0.5 ? -1 : 1) * rand(0.6, 1) * CONFIG.WIND_GUST;
+    gustTimer = rand(2, 5);
+  }
+  gust *= Math.exp(-dt * 0.9);   // 突風は少しずつ弱まる
+  windY = storm * (CONFIG.WIND_STRENGTH * (0.6 * Math.sin(worldTime * 0.9) + 0.4 * Math.sin(worldTime * 2.1 + 1)) + gust);
+  windX = storm * CONFIG.WIND_SIDE * Math.sin(worldTime * 0.5 + 2);
+  plane.pos.y += windY * dt;
+  plane.pos.x += windX * dt;
+  plane.bank += storm * 0.05 * Math.sin(worldTime * 11);       // 風で機体がガタガタゆれる
+  cameraShake = Math.max(cameraShake, storm * 0.1);
+}
+
+// =====================================================================
+// 15-3. 上級の嵐の荒波
+//   機体のまわりだけ、波で上下にうねる海面をかぶせる（遠くはふつうの海）
+// =====================================================================
+const WAVE_SIZE = 900, WAVE_SEG = 90;          // 荒波の海面の広さとこまかさ
+const waveGeo = new THREE.PlaneGeometry(WAVE_SIZE, WAVE_SIZE, WAVE_SEG, WAVE_SEG);
+waveGeo.rotateX(-Math.PI / 2);
+const waveBase = waveGeo.attributes.position.array.slice();   // 動かす前の位置をとっておく
+waveGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(waveBase.length), 3));
+let waveMesh = null;
+let waveCenter = new THREE.Vector3();
+let waveAmp = 0;                // いまの波の高さ
+let surfTimer = 2;              // 「ザザーン」の音の間隔
+
+// 波の高さを計算する（いくつかの波を重ねて、自然なうねりにする）
+function waveHeight(x, z) {
+  if (waveAmp <= 0.01) return 0;
+  const t = worldTime;
+  const h = Math.sin(x * 0.035 + t * 1.3) * 0.5
+          + Math.sin(z * 0.04 + x * 0.02 + t * 1.7) * 0.35
+          + Math.sin((x + z) * 0.11 + t * 2.9) * 0.15;
+  return Math.max(0, (h * 0.5 + 0.5)) * waveAmp;   // 0〜waveAmp の高さ
+}
+
+// しぶき（波の上から白い粒が飛び散る）
+const SPRAY_N = 500;
+const sprayGeo = new THREE.BufferGeometry();
+sprayGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(SPRAY_N * 3), 3));
+const sprayParts = [];
+for (let i = 0; i < SPRAY_N; i++) sprayParts.push({ x: 0, y: -100, z: 0, vx: 0, vy: 0, vz: 0, life: 0 });
+const sprayPoints = new THREE.Points(sprayGeo,
+  new THREE.PointsMaterial({ color: 0xf2f8ff, size: 1.6, transparent: true, opacity: 0.85, depthWrite: false }));
+sprayPoints.frustumCulled = false;
+sprayPoints.visible = false;
+scene.add(sprayPoints);
+
+function buildWaveMesh() {
+  waveMesh = new THREE.Mesh(waveGeo, new THREE.MeshPhongMaterial({
+    color: 0xffffff, map: oceanTexture, vertexColors: true, flatShading: true,   // 角ばった面で、荒れた感じを出す
+    shininess: 60, specular: 0x667788 }));
+  waveMesh.frustumCulled = false;
+  waveMesh.visible = false;
+  scene.add(waveMesh);
+}
+
+function updateRoughSea(dt) {
+  const hard = levelKey === 'hard' && oceanGroup.visible;
+  const storm = hard ? clamp(weatherLevel - 1, 0, 1) : 0;
+  waveAmp = storm * CONFIG.STORM_WAVE_HEIGHT;
+  oceanScroll += dt * (0.02 + 0.08 * storm);                // 嵐では波もようも速く流れる
+  if (foamMat) foamMat.opacity = 0.55 + 0.4 * storm;        // 白い波しぶきも濃くなる
+  if (!waveMesh && oceanTexture) buildWaveMesh();
+  if (!waveMesh) return;
+  waveMesh.visible = storm > 0.02;
+  sprayPoints.visible = storm > 0.02;
+  if (!waveMesh.visible) return;
+
+  // 荒波の海面を、機体の下についてくるようにする（10ずつ動かして、波がすべって見えないように）
+  const follow = phase === 'title' || phase === 'howto' ? new THREE.Vector3() : plane.pos;
+  waveCenter.set(Math.round(follow.x / 10) * 10, 0, Math.round((follow.z - 250) / 10) * 10);
+  waveMesh.position.copy(waveCenter);
+
+  const pos = waveGeo.attributes.position.array;
+  const col = waveGeo.attributes.color.array;
+  const uv = waveGeo.attributes.uv.array;
+  const half = WAVE_SIZE / 2;
+  for (let i = 0, j = 0; i < pos.length; i += 3, j += 2) {
+    const lx = waveBase[i], lz = waveBase[i + 2];
+    const wx = lx + waveCenter.x, wz = lz + waveCenter.z;
+    // はしのほうは波を低くして、遠くのふつうの海となめらかにつなぐ
+    const r = Math.max(Math.abs(lx), Math.abs(lz)) / half;
+    const edge = clamp((1 - r) / 0.25, 0, 1);
+    const h = waveHeight(wx, wz) * edge;
+    pos[i + 1] = 0.05 + h;
+    // 波の谷は暗く、山は明るく
+    const k = waveAmp > 0 ? h / waveAmp : 0;
+    const c = 0.45 + 0.55 * k;
+    col[i] = c; col[i + 1] = c; col[i + 2] = Math.min(1, c + 0.05);
+    // 波もようの位置を、遠くの海とそろえる
+    uv[j] = (wx + 1200) / 2400;
+    uv[j + 1] = (1000 - wz) / 11400;
+  }
+  waveGeo.attributes.position.needsUpdate = true;
+  waveGeo.attributes.color.needsUpdate = true;
+  waveGeo.attributes.uv.needsUpdate = true;
+
+  // しぶきを飛ばす（機体の前のほうの、波の山から）
+  const ax = planeAxes();
+  let spawn = Math.floor(storm * 160 * dt + Math.random());
+  for (let i = 0; i < SPRAY_N && spawn > 0; i++) {
+    const s = sprayParts[i];
+    if (s.life > 0) continue;
+    const x = follow.x + ax.fwd.x * rand(0, 250) + rand(-120, 120);
+    const z = follow.z + ax.fwd.z * rand(0, 250) + rand(-120, 120);
+    const h = waveHeight(x, z);
+    if (h < waveAmp * 0.6) continue;       // 波の山のところだけ
+    s.x = x; s.y = h; s.z = z;
+    s.vx = rand(-3, 3) + windX * 2; s.vy = rand(4, 11); s.vz = rand(-3, 3);
+    s.life = rand(0.8, 1.6);
+    spawn--;
+  }
+  const sp = sprayGeo.attributes.position.array;
+  for (let i = 0; i < SPRAY_N; i++) {
+    const s = sprayParts[i];
+    if (s.life > 0) {
+      s.life -= dt;
+      s.vy -= 15 * dt;                     // 重力で落ちる
+      s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt;
+      if (s.life <= 0) s.y = -100;         // 消えたら見えない所へ
+    }
+    sp[i * 3] = s.x; sp[i * 3 + 1] = s.y; sp[i * 3 + 2] = s.z;
+  }
+  sprayGeo.attributes.position.needsUpdate = true;
+
+  // 「ザザーン」という波の音
+  if (phase === 'fly' || phase === 'goal') {
+    surfTimer -= dt;
+    if (surfTimer <= 0) {
+      noiseBurst(0, 2.2, 0.35 * storm, 'lowpass', 1400, 180, 0.5);
+      surfTimer = rand(1.5, 3.5);
+    }
+  }
+}
+
+// =====================================================================
+// 16. 画面の表示（文字・目印・メーター）
+// =====================================================================
+function updateHudText() {
+  $('hudTime').textContent = 'TIME ' + formatTime(totalTime());
+  $('hudGate').textContent = level.name + '  GATE ' + Math.min(nextGate, gates.length) + ' / ' + gates.length;
+  $('hudPenalty').textContent = 'ペナルティ +' + penalty + '秒 ／ ボーナス −' + bonus + '秒';
+}
+
+function showPopup(text, color) {
+  const p = $('popup');
+  p.textContent = text;
+  p.style.color = color;
+  p.classList.remove('show');
+  void p.offsetWidth;          // アニメーションを最初からやり直すためのおまじない
+  p.classList.add('show');
+}
+
+// 次のゲート（全部終わったらゴール）の場所に目印を出す。画面の外なら端に矢印
+function updateMarker() {
+  const el = $('marker');
+  if (!(phase === 'fly' || phase === 'launch' || phase === 'ready') || paused) { el.style.display = 'none'; return; }
+  const target = nextGate < gates.length ? gates[nextGate].position.clone() : goalPos.clone().setY(25);
+  const dist = Math.round(target.distanceTo(plane.pos));
+  const v = target.clone().project(camera);
+  const W = window.innerWidth, H = window.innerHeight, M = 50;
+  let sx = (v.x * 0.5 + 0.5) * W, sy = (-v.y * 0.5 + 0.5) * H;
+  const behind = v.z > 1;
+  if (behind) { sx = W - sx; sy = H - M; }
+  const off = behind || sx < M || sx > W - M || sy < M || sy > H - M;
+  sx = clamp(sx, M, W - M); sy = clamp(sy, M, H - M);
+  el.style.display = 'block';
+  el.style.left = sx + 'px';
+  el.style.top = sy + 'px';
+  const icon = $('markerIcon');
+  if (off) {
+    icon.textContent = '▶';
+    icon.style.transform = 'rotate(' + Math.atan2(sy - H / 2, sx - W / 2) + 'rad)';
+  } else {
+    icon.textContent = '◎';
+    icon.style.transform = '';
+  }
+  $('markerText').textContent = (nextGate < gates.length ? 'NEXT ' : 'GOAL ') + dist + 'm';
+}
+
+// 左下の速度計・右下の水平儀を描く
+const hud2d = $('hud2d');
+const g2 = hud2d.getContext('2d');
+function drawGauges() {
+  g2.clearRect(0, 0, hud2d.width, hud2d.height);
+  if (!(phase === 'ready' || phase === 'launch' || phase === 'fly')) return;
+  const W = hud2d.width, H = hud2d.height;
+  const r = Math.max(50, Math.min(75, W * 0.07));
+
+  // --- 速度計 ---
+  let cx = r + 24, cy = H - r - 24;
+  g2.fillStyle = 'rgba(20,30,30,.75)';
+  g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2); g2.fill();
+  g2.strokeStyle = '#cfd8dc'; g2.lineWidth = 3; g2.stroke();
+  const a0 = Math.PI * 0.75, span = Math.PI * 1.5, maxV = 120;
+  g2.lineWidth = 6; g2.strokeStyle = '#ffeb3b';
+  g2.beginPath(); g2.arc(cx, cy, r - 10, a0 + span * (level.baseSpeed / maxV), a0 + span * (level.boostSpeed / maxV)); g2.stroke();
+  g2.lineWidth = 2; g2.strokeStyle = '#fff';
+  for (let i = 0; i <= 10; i++) {
+    const a = a0 + span * i / 10;
+    g2.beginPath();
+    g2.moveTo(cx + Math.cos(a) * (r - 4), cy + Math.sin(a) * (r - 4));
+    g2.lineTo(cx + Math.cos(a) * (r - 14), cy + Math.sin(a) * (r - 14));
+    g2.stroke();
+  }
+  const na = a0 + span * clamp(plane.speed / maxV, 0, 1);
+  g2.strokeStyle = '#ff5252'; g2.lineWidth = 4;
+  g2.beginPath(); g2.moveTo(cx, cy); g2.lineTo(cx + Math.cos(na) * (r - 12), cy + Math.sin(na) * (r - 12)); g2.stroke();
+  g2.fillStyle = '#fff'; g2.textAlign = 'center'; g2.font = 'bold 12px sans-serif';
+  g2.fillText('SPEED', cx, cy - r * 0.35);
+  g2.font = 'bold 16px sans-serif';
+  g2.fillText(Math.round(plane.speed * 10) + ' km/h', cx, cy + r * 0.55);
+
+  // --- 水平儀（機体のかたむき）と高度 ---
+  cx = W - r - 24;
+  g2.save();
+  g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2); g2.clip();
+  g2.translate(cx, cy);
+  g2.rotate(plane.bank);
+  const off = plane.pitch * r * 1.3;
+  g2.fillStyle = '#4fa3e0'; g2.fillRect(-r * 2, -r * 2, r * 4, r * 2 + off);
+  g2.fillStyle = '#8d6e4a'; g2.fillRect(-r * 2, off, r * 4, r * 2);
+  g2.strokeStyle = '#fff'; g2.lineWidth = 2;
+  g2.beginPath(); g2.moveTo(-r, off); g2.lineTo(r, off); g2.stroke();
+  g2.restore();
+  g2.strokeStyle = '#cfd8dc'; g2.lineWidth = 3;
+  g2.beginPath(); g2.arc(cx, cy, r, 0, Math.PI * 2); g2.stroke();
+  g2.strokeStyle = '#ffeb3b'; g2.lineWidth = 4;
+  g2.beginPath(); g2.moveTo(cx - r * 0.5, cy); g2.lineTo(cx - 8, cy); g2.lineTo(cx, cy + 6); g2.lineTo(cx + 8, cy); g2.lineTo(cx + r * 0.5, cy); g2.stroke();
+  g2.fillStyle = '#fff'; g2.font = 'bold 16px sans-serif';
+  g2.fillText('高度 ' + Math.round(plane.pos.y) + 'm', cx, cy + r * 0.6);
+}
+
+// =====================================================================
+// 17. ウィンドウの大きさが変わったときの調整
+// =====================================================================
+function onResize() {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  hud2d.width = window.innerWidth;
+  hud2d.height = window.innerHeight;
+  weatherCanvas.width = window.innerWidth;
+  weatherCanvas.height = window.innerHeight;
+}
+window.addEventListener('resize', onResize);
+
+// =====================================================================
+// 18. スタート！
+// =====================================================================
+buildWorld();
+buildOcean();
+onResize();
+goTitle();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
