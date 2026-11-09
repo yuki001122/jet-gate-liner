@@ -32,6 +32,12 @@
     color: #fff; font-size: 24px; font-weight: 900; letter-spacing: 2px; white-space: nowrap;
     box-shadow: 0 0 18px #ff1744; animation: blink .12s infinite alternate; }
   #samWarn small { display: block; font-size: 13px; letter-spacing: 0; }
+  #bombCam { position: fixed; display: none; pointer-events: none; box-sizing: border-box;
+    border: 4px solid #ffcc00; border-radius: 10px; box-shadow: 0 0 18px rgba(255,170,0,.8), inset 0 0 0 2px #000; }
+  #bombCam .label { position: absolute; left: 8px; top: 6px; padding: 2px 10px; border-radius: 6px;
+    background: rgba(0,0,0,.65); color: #ffcc00; font-size: 16px; font-weight: 900; letter-spacing: 1px; }
+  #bombCam .rec { position: absolute; right: 10px; top: 8px; color: #ff1744; font-weight: 900; font-size: 15px;
+    animation: blink .4s infinite alternate; }
   #gearText { position: fixed; top: 30%; left: 0; right: 0; text-align: center; pointer-events: none; display: none; }
   #gearText .big { display: inline-block; font-family: Impact, "Arial Black", sans-serif; font-size: 78px; font-weight: 900;
     letter-spacing: 6px; color: #111; padding: 4px 34px; border: 5px solid #111; border-radius: 8px;
@@ -180,6 +186,7 @@
       <tr><td><span class="key">←</span> <span class="key">→</span></td><td>左右に旋回</td></tr>
       <tr><td><span class="key">スペース</span></td><td>カタパルト発進 ／ 押している間ブースト</td></tr>
       <tr><td><span class="key">X</span></td><td><b style="color:#ff8a65">超高速ブースト</b>（押している間、超高速で突き進む。速いほど曲がりにくいので注意）</td></tr>
+      <tr><td><span class="key">C</span></td><td>爆弾を落とす（地面・海面の赤いわが、落ちる場所の目印）</td></tr>
       <tr><td><span class="key">Z</span></td><td>機関砲を撃つ（押しっぱなしで連射。黄色い照準のほうへ飛ぶ）</td></tr>
       <tr><td><span class="key">Esc</span></td><td>一時停止（ここからタイトルにもどることもできます）</td></tr>
       <tr><td><span class="key">M</span></td><td>音のオン・オフ</td></tr>
@@ -194,6 +201,7 @@
     ・前から飛んでくるミサイルを撃ち落とす：<b style="color:#ffeb3b">タイム −<span id="howtoMissile"></span>秒</b>（当たると減速＋3秒）<br>
     ・天気が変わる：<b>☀ 晴れ</b> → <b>🌧 小雨</b>（暗くなり、操作が少し重くなる） → <b>⛈ 嵐</b>（稲光・強い雨・風で上下にあおられる）<br>
     <span id="howtoBalloon">・コースの中を動きまわる気球にぶつかる：<b style="color:#ffd54f">大きく減速 ＋ タイム +3秒</b><br></span>
+    ・下の発射台・船・潜水艦に爆弾を落として破壊する：<b style="color:#ffeb3b">タイム −<span id="howtoBomb"></span>秒</b>（破壊するとミサイルを撃ってこなくなる）<br>
     ・最初（晴れ）から、<span id="howtoSamFrom">地上</span>から<b style="color:#ff5252">真っ赤な炎のミサイル</b>が下から飛び出してくる（発射の直前に赤い「WARNING!」が点滅）：撃ち落とす（迎撃）と<b style="color:#ffeb3b">タイム −<span id="howtoSam"></span>秒</b><br>
     <span id="howtoLanding">・最後のゲートのあと、<span id="howtoLandingWhere">空母</span>の<b style="color:#69f0ae">どこか</b>に接地する（さわる）だけ：<b style="color:#ffeb3b">PERFECT LANDING! タイム −5秒</b>（着陸するとそのままゴール）<br></span>
     ・地面や海に落ちる／エリアの外に出る：<b style="color:#ff5252">ゲームオーバー</b><br>
@@ -238,6 +246,8 @@
 
 <!-- 上級の着艦成功のときにドカンと出る文字 -->
 <!-- 最後のゲートのあと、車輪を出したときに出る文字 -->
+<!-- 爆弾が着弾したところを映す小さな窓 -->
+<div id="bombCam"><div class="label">💣 着弾カメラ</div><div class="rec">● LIVE</div></div>
 <div id="gearText"><div class="big">GEAR DOWN!</div><div class="sub">車輪を出した！ 着陸態勢に入った！</div></div>
 <div id="arrestText"><div class="big">CARRIER ARRESTED!</div><div class="sub">着艦成功！ PERFECT LANDING −<span id="arrestBonus"></span>秒</div></div>
 
@@ -325,6 +335,13 @@ const CONFIG = {
   SAM_SITE_EVERY: 2,         // 発射台（軍艦）を、ゲートいくつごとに置くか（小さいほど多い）
   SAM_MAX: 6,                // 地上・海上ミサイルが同時に飛んでいられる数（最大）
 
+  // --- 爆弾（Cキー） ---
+  BOMB_BONUS: 1,             // 発射台・船・潜水艦を爆弾で破壊したときに減る秒数
+  BOMB_INTERVAL: 0.5,        // 次の爆弾を落とせるまでの秒数
+  BOMB_GRAVITY: 30,          // 爆弾が落ちる速さ（重力）
+  BOMB_HIT_RADIUS: 26,       // 爆弾の当たりのはんい（大きいほど当てやすい）
+  BOMB_CAM_TIME: 3.2,        // 着弾カメラ（小さな窓）を出しておく秒数
+
   // --- 自分の機関砲 ---
   SHOOTDOWN_BONUS: 3,        // 戦闘機を撃墜したときに減る秒数
   FIGHTER_HP: 1,             // 戦闘機を撃墜するのに必要な命中数（1 = 1発で撃墜）
@@ -342,6 +359,7 @@ const CONFIG = {
   WIND_GUST: 9,              // 突風の強さ（ときどき来る強い風）
   WIND_SIDE: 4,              // 嵐の風で左右に流される強さ
   STORM_WAVE_HEIGHT: 6,      // 上級の嵐の荒波の高さ（大きいほど波が高い）
+  SEA_OPACITY: 0.6,          // 上級の海のすけぐあい（小さいほど、海の中の潜水艦がよく見える。1で見えない）
   RAIN_VOLUME: 0.12,         // 雨の音の大きさ（0〜1）
   BGM_VOLUME: 2.0,           // BGMの大きさ（1より大きくしてもOK）
   BGM_MELODY_BOOST: 2.0,     // BGMのメロディ・和音だけをさらに大きくする倍率（ドラムに負けないように）
@@ -410,7 +428,7 @@ const DIFFICULTY = {
     maxMissiles: 20,    // 同時に飛んでいられるミサイルの数（最大）
     missileSpeed: 60,   // ミサイルの速さ
     missileTurn: 0.5,   // ミサイルが自分を追いかけて曲がる強さ（大きいほどしつこい）
-    samInterval: 2,     // パトリオットからミサイルが発射される間隔（秒）。この間かくで1発ずつ
+    samInterval: 2.0,   // 地下基地・パトリオットからミサイルが発射される間隔（秒）。ちょうどこの間かくで1発ずつ
     samSpeed: 55,       // 地上ミサイルの速さ
     samTurn: 0.9        // 地上ミサイルが追いかけてくる強さ
   },
@@ -436,7 +454,7 @@ const DIFFICULTY = {
     maxMissiles: 25,
     missileSpeed: 80,
     missileTurn: 0.9,
-    samInterval: 2,     // 軍艦・ミサイル艇からミサイルが発射される間隔（秒）。この間かくで1発ずつ
+    samInterval: 2.0,   // 潜水艦・軍艦・ミサイル艇からミサイルが発射される間隔（秒）。ちょうどこの間かくで1発ずつ
     samSpeed: 70,
     samTurn: 1.3
   }
@@ -564,10 +582,16 @@ function buildOcean() {
   oceanTexture.wrapS = oceanTexture.wrapT = THREE.RepeatWrapping;
   oceanTexture.repeat.set(30, 190);
   const ocean = new THREE.Mesh(new THREE.PlaneGeometry(2400, 11400),
-    mat(SEA_COLOR));                     // 初級の海と同じ色（波もようや光の反射はつけない）
+    mat(SEA_COLOR, { transparent: true, opacity: CONFIG.SEA_OPACITY }));   // 初級の海と同じ色。少しすき通っていて、海の中が見える
   ocean.rotation.x = -Math.PI / 2;
   ocean.position.set(0, 0, -4700);   // 空母のうしろから、ゴールのずっと先まで
+  ocean.renderOrder = -1;            // すき通るものの中で、いちばん先に描く（光の帯などが海に消されないように）
   oceanGroup.add(ocean);
+  // 海の底：海と同じ色の板。何もないところは今までと同じ海の色に見え、潜水艦のところだけ黒く透けて見える
+  const seabed = new THREE.Mesh(new THREE.PlaneGeometry(2400, 11400), mat(SEA_COLOR));
+  seabed.rotation.x = -Math.PI / 2;
+  seabed.position.set(0, -45, -4700);
+  oceanGroup.add(seabed);
 
   // 白い波しぶき（スピード感が出るように、たくさん散らばらせる）
   const FOAM_N = 1400;
@@ -759,8 +783,8 @@ function addLandingMarks(carrier) {
       deckLights.push(l);
     }
   }
-  // 甲板の四すみの大きなサーチライト（空に向かって光の帯をのばし、ウインウインと探す）
-  carrier.userData.lights = [[-15, -48, -2.3], [15, -48, 2.3], [-15, 48, -0.8], [15, 48, 0.8]]
+  // 甲板の左右に3つずつ、大きなサーチライト6つ（空に向かって光の帯をのばし、ウインウインと探す）
+  carrier.userData.lights = [[-15, -48, -2.3], [15, -48, 2.3], [-15, 0, -1.6], [15, 0, 1.6], [-15, 48, -0.8], [15, 48, 0.8]]
     .map(([x, z, yaw]) => buildSearchlight(carrier, x, 13, z, yaw));
   carrier.userData.deckLights = deckLights;
 }
@@ -1331,11 +1355,19 @@ function buildCourse() {
   for (let k = 0; k < gates.length - 1; k += CONFIG.SAM_SITE_EVERY) {
     const a = gates[k].position, b = gates[k + 1].position;
     const side = Math.random() < 0.5 ? -1 : 1;
-    const site = levelKey === 'hard' ? (samSites.length % 2 ? buildMissileBoat() : buildWarship()) : buildSamLauncher();
-    // コースのすぐ横（よく見える場所）に置く
-    site.position.set((a.x + b.x) / 2 + side * rand(24, 45), 0, (a.z + b.z) / 2 + rand(-25, 25));
+    // 初級：地下ミサイル基地 → パトリオット の順番 ／ 上級：潜水艦 → 軍艦 → 潜水艦 → ミサイル艇 の順番
+    const n = samSites.length;
+    const site = levelKey === 'hard'
+      ? (n % 2 === 0 ? buildSubmarine() : n % 4 === 1 ? buildWarship() : buildMissileBoat())
+      : (n % 2 === 0 ? buildSilo() : buildSamLauncher());
+    const hidden = site.userData.kind === 'silo' || site.userData.kind === 'sub';
+    // 地下基地・潜水艦は飛ぶ道のほぼ真下（よく見える）、ほかはコースのすぐ横に置く
+    site.position.set((a.x + b.x) / 2 + side * (hidden ? rand(4, 22) : rand(24, 45)), 0, (a.z + b.z) / 2 + rand(-25, 25));
     if (levelKey === 'hard') site.rotation.y = rand(-0.6, 0.6);
-    else {
+    else if (site.userData.kind === 'silo') {
+      site.rotation.y = rand(-0.3, 0.3);
+      treeRects.push({ x: site.position.x, halfW: 35, zMin: site.position.z - 35, zMax: site.position.z + 35 });
+    } else {
       site.rotation.y = Math.PI + side * rand(0.2, 0.5);     // パトリオットは、飛んでくる自機のほうに発射筒を向ける
       treeRects.push({ x: site.position.x, halfW: 40, zMin: site.position.z - 45, zMax: site.position.z + 45 });
     }
@@ -1345,7 +1377,7 @@ function buildCourse() {
     samSites.push(site);
   }
 
-  if (levelKey !== 'hard') clearTreesFor(treeRects);   // 滑走路とパトリオット陣地の木をどける
+  if (levelKey !== 'hard') clearTreesFor(treeRects);   // 滑走路・パトリオット陣地・地下基地の木をどける
 
   // 上級：ゲートとゲートの間に、動くじゃま気球を置く
   obstacles = [];
@@ -2096,8 +2128,9 @@ function showHowto() {
   $('howtoHp').textContent = CONFIG.FIGHTER_HP;
   $('howtoMissile').textContent = CONFIG.MISSILE_BONUS;
   $('howtoBonus').textContent = CONFIG.SHOOTDOWN_BONUS;   // 説明の秒数も CONFIG に合わせる
-  $('howtoSamFrom').textContent = levelKey === 'hard' ? '海の上の軍艦・ミサイル艇' : '地上の発射台';
+  $('howtoSamFrom').textContent = levelKey === 'hard' ? '海の中の潜水艦・海の上の軍艦やミサイル艇' : '地下ミサイル基地のハッチ・地上のパトリオット';
   $('howtoSam').textContent = CONFIG.SAM_BONUS;
+  $('howtoBomb').textContent = CONFIG.BOMB_BONUS;
   $('howtoLandingWhere').textContent = levelKey === 'hard' ? '空母の甲板' : '基地の滑走路';
   $('howtoBalloon').style.display = level.obstacles > 0 ? 'inline' : 'none';
   showScreen('howtoScreen');
@@ -2117,7 +2150,8 @@ function startGame() {
   resetGear();
   arrested = false; arrestWire = null;
   $('arrestText').classList.remove('show');
-  gunHits = 0; shootDowns = 0; missileDowns = 0; samDowns = 0;
+  gunHits = 0; shootDowns = 0; missileDowns = 0; samDowns = 0; bombKills = 0;
+  wrecks = [];
   resetWeather();
   resetFighters();
   paused = false;
@@ -2171,11 +2205,14 @@ function loop(now) {
     updateTrails();
     updateSearchlights(dt);
     updateTireSmoke(dt);
+    updateSilosAndSubs(dt);
+    updateFxParticles(dt);
     animateDecor();
     updateWeather(dt);
   }
   updateEngineSound();
   renderer.render(scene, camera);
+  renderBombCam(dt);
   drawWeather();
   drawGauges();
   updateMarker();
@@ -2292,8 +2329,10 @@ function deployGear() {
 
 // 車輪をしまう（スタートのとき）
 function resetGear() {
+  if (typeof bombCamView !== 'undefined') bombCamView = null;
   stopBrakeSound();
   clearTireSmoke();
+  clearFxParticles();
   gearDown = false;
   gearT = 0;
   $('gearText').classList.remove('show');
@@ -3134,6 +3173,10 @@ let salvoLeft = 0;       // 一斉発射で、まだ撃っていないミサイ�
 let salvoTimer = 0;      // 一斉発射の1本ごとの間隔
 let missileDowns = 0;    // ミサイルを撃ち落とした数
 let samDowns = 0;        // 地上・海上ミサイルを迎撃した数
+let bombs = [];          // 落ちている爆弾
+let bombTimer = 0;       // 次の爆弾を落とせるまでの時間
+let bombKills = 0;       // 爆弾で破壊した数
+let wrecks = [];         // 破壊したあとの、燃えているあと
 let samSites = [];       // 発射台（初級）・軍艦やミサイル艇（上級）
 let samPending = [];     // 「WARNING!」中で、もうすぐ発射されるミサイル
 let samTimer = 0;        // 次の発射までの時間
@@ -3203,6 +3246,10 @@ function resetFighters() {
   smokePuffs.forEach(m => { scene.remove(m); m.material.dispose(); });
   missiles = []; smokePuffs = [];
   samPending.forEach(w => scene.remove(w.ring));
+  bombs.forEach(b => scene.remove(b));
+  bombs = [];
+  bombTimer = 0;
+  if (typeof bombSight !== 'undefined') bombSight.visible = false;
   samPending = [];
   samTimer = 2;
   $('samWarn').style.display = 'none';
@@ -3367,6 +3414,7 @@ function updateFighters(dt, prevPlane) {
     playerFireTimer = CONFIG.PLAYER_FIRE_INTERVAL;
   }
   updateSams(dt);
+  updateBombs(dt);
   updateMissiles(dt, prevPlane);
   updatePlayerBullets(dt);
   updateExplosions(dt);
@@ -3534,7 +3582,7 @@ function updateMissiles(dt, prevPlane) {
       m.lookAt(m.position.clone().sub(u.dir));
     }
     const before = m.position.clone();
-    m.position.addScaledVector(u.dir, (u.speed || level.missileSpeed) * dt);
+    m.position.addScaledVector(u.dir, (u.underwater ? 35 : (u.speed || level.missileSpeed)) * dt);   // 海の中ではゆっくり
     if (ahead > 0 && ahead < 450) warn = true;
 
     // うしろにけむりを出す
@@ -3546,7 +3594,12 @@ function updateMissiles(dt, prevPlane) {
     }
 
     // 自分に当たったか（自分も動いているので「自分から見た動き」の線で調べる）
-    let remove = u.life > CONFIG.MISSILE_LIFE || ahead < -150 || m.position.y < 0;
+    // 海の中から出てきたミサイルは、海面をつきやぶった瞬間に「バシャァッ！」と水しぶき
+    if (u.underwater) {
+      const sea = waveHeight(m.position.x, m.position.z);
+      if (m.position.y > sea) { u.underwater = false; subLaunchFx(null, m.position.clone()); }
+    }
+    let remove = u.life > CONFIG.MISSILE_LIFE || ahead < -150 || (m.position.y < 0 && !u.underwater);
     const relA = before.sub(prevPlane);
     const relB = m.position.clone().sub(plane.pos);
     if (!remove && invincible <= 0 && distToSegment(new THREE.Vector3(), relA, relB) < CONFIG.MISSILE_HIT_SIZE) {
@@ -3749,6 +3802,566 @@ function buildMissileBoat() {
   return g;
 }
 
+// ---------------------------------------------------------------------
+// 初級：地下ミサイル基地（地面の巨大な鉄のハッチが左右に開き、縦穴からミサイルが飛び出す）
+// ---------------------------------------------------------------------
+function buildSilo() {
+  const g = new THREE.Group();
+  // コンクリートの土台と、黄色×黒の注意しましまのふち
+  g.add(box(30, 0.3, 30, 0x8e9089, 0, 0.15, 0));
+  const stripe = document.createElement('canvas');
+  stripe.width = 128; stripe.height = 16;
+  const sc = stripe.getContext('2d');
+  for (let i = 0; i < 8; i++) { sc.fillStyle = i % 2 ? '#111' : '#ffcc00'; sc.beginPath();
+    sc.moveTo(i * 16, 16); sc.lineTo(i * 16 + 8, 0); sc.lineTo(i * 16 + 24, 0); sc.lineTo(i * 16 + 16, 16); sc.fill(); }
+  const stripeTex = new THREE.CanvasTexture(stripe);
+  stripeTex.wrapS = THREE.RepeatWrapping; stripeTex.repeat.set(4, 1);
+  for (const [x, z, rot] of [[0, -14, 0], [0, 14, 0], [-14, 0, Math.PI / 2], [14, 0, Math.PI / 2]]) {
+    const st = new THREE.Mesh(new THREE.PlaneGeometry(28, 2), new THREE.MeshBasicMaterial({ map: stripeTex }));
+    st.rotation.x = -Math.PI / 2; st.rotation.z = rot;
+    st.position.set(x, 0.32, z);
+    g.add(st);
+  }
+  // 真っ暗な縦穴（中は赤くうっすら光る）
+  g.add(box(16, 0.1, 16, 0x050505, 0, 0.33, 0));
+  const glowIn = new THREE.Mesh(new THREE.PlaneGeometry(13, 13), glowMat(0xff3300, 0));
+  glowIn.rotation.x = -Math.PI / 2;
+  glowIn.position.y = 0.36;
+  g.add(glowIn);
+  // 左右にスライドする、巨大な鉄のハッチ（扉）
+  const doorMat = shiny(0x5f6670, { shininess: 60 });
+  const doors = [];
+  for (const side of [-1, 1]) {
+    const d = new THREE.Group();
+    d.position.set(side * 4.1, 0.75, 0);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(8.2, 0.8, 16.4), doorMat);
+    d.add(plate);
+    for (let z = -6; z <= 6; z += 4) d.add(box(7.6, 0.25, 0.6, 0x3d434b, 0, 0.5, z));   // 補強のすじ
+    d.add(box(0.5, 0.3, 16, 0xffcc00, -side * 3.9, 0.45, 0));                             // 合わせ目の黄色い線
+    g.add(d);
+    doors.push({ g: d, side: side });
+  }
+  // まわりの回転灯と照明（遠くからでも目立つ）
+  for (const [x, z] of [[-13, -13], [13, -13], [-13, 13], [13, 13]]) addBeacon(g, x, 2.2, z, 0xffab00);
+  for (const x of [-16, 16]) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 10, 6), mat(0x555555));
+    pole.position.set(x, 5, 0);
+    g.add(pole);
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(1.6, 1, 3), glowMat(0xfff1c0, 1)).translateX(x * 0.9).translateY(10.3));
+  }
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(22, 32), glowMat(0xffe0a0, 0.14));
+  pool.rotation.x = -Math.PI / 2;
+  pool.position.y = 0.4;
+  g.add(pool);
+  g.userData.kind = 'silo';
+  g.userData.doors = doors;
+  g.userData.glowIn = glowIn;
+  g.userData.hatch = 0;            // ハッチの開きぐあい（0=閉 1=全開）
+  g.userData.hatchTarget = 0;
+  g.userData.closeTimer = 0;
+  g.userData.muzzle = new THREE.Vector3(0, 1, 0);
+  g.scale.setScalar(1.6);
+  return g;
+}
+
+// ハッチを開ける：「ガガガッ…ガコン」
+function openSiloHatch(site) {
+  site.userData.hatchTarget = 1;
+  site.userData.closeTimer = 0;
+  for (let i = 0; i < 6; i++) {
+    tone(70 + i * 4, i * 0.1, 0.09, 'square', 0.18, 55);
+    noiseBurst(i * 0.1, 0.08, 0.35, 'lowpass', 900, 300, 0.003);
+  }
+  noiseBurst(0, 0.7, 0.25, 'bandpass', 300, 600, 0.05);          // ゴゴゴ…（重い扉がすべる）
+  tone(55, 0.65, 0.35, 'sine', 0.6, 40);                         // ガコン
+}
+
+// 縦穴からミサイルが飛び出すときの、激しい炎とけむり
+function siloLaunchFx(site, pos) {
+  site.userData.closeTimer = 2.5;                                 // しばらくしたらハッチを閉める
+  makeExplosion(pos.clone().add(new THREE.Vector3(0, 2, 0)), 9, 0.7);
+  for (let i = 0; i < 26; i++) {                                  // 穴からふき上がる炎とけむり
+    const fire = i < 12;
+    spawnFxParticle(pos.clone().add(new THREE.Vector3(rand(-5, 5), 1, rand(-5, 5))),
+      new THREE.Vector3(rand(-3, 3), rand(8, 22), rand(-3, 3)), fire ? 0xff6a00 : 0x9e9e9e,
+      fire ? 0.9 : 0.6, rand(0.8, 1.6), fire, -2, 2.5);
+  }
+  // ゴォォッ！（地下からの、ものすごい噴射の音）
+  noiseBurst(0, 1.8, 0.7, 'lowpass', 2000, 150, 0.03);
+  tone(60, 0, 1.6, 'sawtooth', 0.25, 35);
+}
+
+// ---------------------------------------------------------------------
+// 上級：潜水艦（海面すれすれに黒い巨体が浮かび上がり、水中の発射管から真上へミサイル）
+// ---------------------------------------------------------------------
+function buildSubmarine() {
+  const g = new THREE.Group();
+  const body = new THREE.Group();                 // 浮かび上がる部分（船体）
+  const black = shiny(0x101820, { shininess: 40 });
+  const hull = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, 34, 20), black);
+  hull.rotation.x = Math.PI / 2;
+  body.add(hull);
+  for (const z of [-17, 17]) {                    // 丸い前と後ろ
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(2.6, 20, 12), black);
+    cap.scale.set(1, 1, z < 0 ? 2.2 : 1.6);
+    cap.position.z = z;
+    body.add(cap);
+  }
+  const sail = box(2.4, 5, 7, 0x0c1014, 0, 4.2, -6);              // 司令塔
+  body.add(sail);
+  body.add(box(7, 0.25, 1.6, 0x0c1014, 0, 5.4, -6));              // 司令塔のはね
+  const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3, 6), mat(0x222222));   // 潜望鏡
+  scope.position.set(0, 8, -6.5);
+  body.add(scope);
+  for (let i = 0; i < 4; i++) body.add(box(1.4, 0.15, 1.4, 0x1e252c, 0, 2.62, 2 + i * 2.6));   // ミサイル発射管のふた
+  const tail = box(0.3, 4, 3, 0x0c1014, 0, 1.5, 19);              // うしろのかじ
+  body.add(tail);
+  body.position.y = -14;                                           // ずっと海の中（上から海を通して透けて見える）
+  g.add(body);
+  // 海面にうっすら見える、黒い巨体の影と、白いあわのふち
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({
+    color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.scale.set(5, 26, 1);
+  shadow.position.y = 0.3;
+  g.add(shadow);
+  const foam = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 40), new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide }));
+  foam.rotation.x = -Math.PI / 2;
+  foam.scale.set(6, 28, 1);
+  foam.position.y = 0.32;
+  g.add(foam);
+  // 水面下で焚いているサーチライト・航海灯の光（にごった海水が、緑や青にぼんやり光る）
+  const glows = [];
+  const addGlow = (color, sx, sz, ox, oz, kind) => {
+    const m = new THREE.Mesh(subGlowGeo, new THREE.MeshBasicMaterial({ map: subGlowTex, color: color, transparent: true,
+      opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    m.scale.set(sx, sz, 1);
+    m.position.set(ox, 0.2, oz);
+    m.renderOrder = 2;
+    g.add(m);
+    glows.push({ mesh: m, color: new THREE.Color(color), sx: sx, sz: sz, ox: ox, oz: oz, kind: kind, ph: rand(0, 6) });
+  };
+  addGlow(0x24e0b4, 16, 50, 0, 0, 'main');          // 船体にそった、大きな楕円の光（緑）
+  addGlow(0x2fa8ff, 13, 13, -6, -14, 'blob');        // ふわふわ光る円（青）
+  addGlow(0x3dffa0, 11, 11, 7, 6, 'blob');           // （緑）
+  addGlow(0x4fc3ff, 9, 9, -4, 16, 'blob');           // （青）
+  addGlow(0xc8fff0, 7, 26, 0, 0, 'search');          // 水の中で回っているサーチライトの光
+  g.userData.glows = glows;
+  g.userData.flash = 0;            // 発射の瞬間の「ピカッ」
+  g.userData.kind = 'sub';
+  g.userData.body = body;
+  g.userData.shadow = shadow;
+  g.userData.foam = foam;
+  g.userData.surface = 0.35;       // 浮かび上がりぐあい（0=深く 1=海面すれすれ）
+  g.userData.surfaceTarget = 0.35;
+  g.userData.muzzle = new THREE.Vector3(0, 0.5, 5);   // 発射管（船体のまんなかあたり）
+  g.scale.setScalar(1.5);
+  return g;
+}
+
+// 水面下の光のもよう（まんなかが明るく、まわりがふんわり消える丸）
+const subGlowTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+})();
+const subGlowGeo = new THREE.PlaneGeometry(1, 1);
+subGlowGeo.rotateX(-Math.PI / 2);
+
+// 潜水艦が浮かび上がる（ゴボゴボ…）
+function surfaceSub(site) {
+  site.userData.surfaceTarget = 1;
+  site.userData.sinkTimer = 4;
+  site.userData.boil = CONFIG.SAM_WARNING_TIME;      // 発射まで、海面がブクブクわき立つ
+  for (let i = 0; i < 8; i++) noiseBurst(i * 0.1, 0.12, 0.2, 'lowpass', 700, 200, 0.01);   // ゴボゴボ
+  tone(45, 0, 1.2, 'sine', 0.4, 38);                                                         // 低いうなり
+}
+
+// 水面をバシャァッと突きやぶって、ミサイルが飛び出すときのしぶき
+function subLaunchFx(site, pos) {
+  const water = pos.clone();
+  water.y = Math.max(0.5, waveHeight(pos.x, pos.z));
+  for (let i = 0; i < 40; i++) {
+    const a = Math.random() * Math.PI * 2, sp = rand(2, 9);
+    spawnFxParticle(water.clone().add(new THREE.Vector3(Math.cos(a) * 2, 0, Math.sin(a) * 2)),
+      new THREE.Vector3(Math.cos(a) * sp, rand(10, 26), Math.sin(a) * sp), 0xf2f8ff, 0.9, rand(0.9, 1.6), false, 22, 1.2);
+  }
+  for (let i = 0; i < 18; i++) {                  // まっすぐ立ち上がる水の柱
+    spawnFxParticle(water.clone().add(new THREE.Vector3(rand(-1.2, 1.2), 0, rand(-1.2, 1.2))),
+      new THREE.Vector3(rand(-1, 1), rand(25, 40), rand(-1, 1)), 0xffffff, 0.85, rand(1.0, 1.5), false, 28, 1.5);
+  }
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2, 3, 32), new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.copy(water).setY(water.y + 0.2);
+  scene.add(ring);
+  fxParticles.push({ mesh: ring, vel: new THREE.Vector3(), age: 0, life: 1.2, op: 0.8, gravity: 0, grow: 9 });
+  // バシャァッ！
+  noiseBurst(0, 0.7, 0.8, 'highpass', 1500, 600, 0.003);
+  noiseBurst(0.05, 1.2, 0.5, 'lowpass', 1800, 250, 0.02);
+}
+
+// 毎フレーム：ハッチの開け閉め・潜水艦の浮き沈み
+function updateSilosAndSubs(dt) {
+  samSites.forEach(st => {
+    const u = st.userData;
+    if (u.kind === 'silo') {
+      if (u.closeTimer > 0) { u.closeTimer -= dt; if (u.closeTimer <= 0) u.hatchTarget = 0; }
+      u.hatch += clamp(u.hatchTarget - u.hatch, -dt / 1.2, dt / 0.7);   // 0.7秒で開き、1.2秒で閉まる
+      u.doors.forEach(d => { d.g.position.x = d.side * (4.1 + 8 * u.hatch); });
+      u.glowIn.material.opacity = 0.5 * u.hatch * (0.7 + 0.3 * Math.sin(worldTime * 20));
+    } else if (u.kind === 'sub') {
+      // 自機が近づいてくると、黒い巨体がうっすら浮かび上がる
+      const near = Math.abs(st.position.z - plane.pos.z) < 700 ? 0.7 : 0.35;
+      if (u.sinkTimer > 0) { u.sinkTimer -= dt; } else u.surfaceTarget = near;
+      u.surface += clamp(u.surfaceTarget - u.surface, -dt * 0.3, dt * 0.8);
+      const sea = waveHeight(st.position.x, st.position.z);
+      // 浮かび上がるのは「船体が海面の少し下」まで（司令塔だけが海の上に出る）
+      // 自機が近づくと、海の中で少し浮かび上がる（潜望鏡の先まで、ずっと海の中）
+      u.body.position.y = -14 + 3 * u.surface;
+      // 発射の前は、発射管の真上の海面がブクブクと白くわき立つ
+      if (u.boil > 0) {
+        u.boil -= dt;
+        const top = st.localToWorld(new THREE.Vector3(0, 0, 5));
+        for (let i = 0; i < 2; i++) spawnFxParticle(new THREE.Vector3(top.x + rand(-3, 3), sea + 0.3, top.z + rand(-3, 3)),
+          new THREE.Vector3(rand(-1, 1), rand(1, 4), rand(-1, 1)), 0xf4faff, 0.6, rand(0.5, 0.9), false, 4, 2.5);
+      }
+      u.body.rotation.z = Math.sin(worldTime * 0.7 + u.phase) * 0.02;
+      u.shadow.visible = false;                                      // 海面の影とあわは使わない（透けて見えるので）
+      u.foam.visible = false;
+      // 水面下の光：嵐で見えにくいほど強く。発射の前はだんだん強まり、発射の瞬間に「ピカッ」
+      const storm = clamp(weatherLevel - 1, 0, 1);
+      const base = 0.3 + 0.45 * storm;
+      const charge = u.boil > 0 ? 1 - u.boil / CONFIG.SAM_WARNING_TIME : 0;
+      u.flash = Math.max(0, u.flash - dt * 2.2);
+      const t = worldTime;
+      u.glows.forEach(gl => {
+        const flicker = 0.75 + 0.15 * Math.sin(t * 2.3 + gl.ph) + 0.1 * Math.sin(t * 5.7 + gl.ph * 2);   // 不規則にゆらぐ
+        let op = (base + 0.4 * charge) * flicker + u.flash;
+        let sx = gl.sx, sz = gl.sz, x = gl.ox, z = gl.oz;
+        if (gl.kind === 'blob') {             // ふわふわ動いて、大きさも変わる
+          x += Math.sin(t * 0.6 + gl.ph) * 3;
+          z += Math.cos(t * 0.5 + gl.ph) * 4;
+          const k = 1 + 0.2 * Math.sin(t * 1.3 + gl.ph);
+          sx *= k; sz *= k;
+        } else if (gl.kind === 'search') {    // 水の中のサーチライトが、ぐるっと回る
+          gl.mesh.rotation.y = t * 0.8 + gl.ph;
+          op *= 0.8;
+        }
+        const big = 1 + u.flash * 0.8 + charge * 0.15;   // 光るときは大きくふくらむ
+        gl.mesh.scale.set(sx * big, 1, sz * big);
+        gl.mesh.position.set(x, (sea + 0.25) / 1.5, z);  // 波のうねりのすぐ下（潜水艦の大きさ 1.5 倍の分をもどす）
+        gl.mesh.material.opacity = Math.min(1, op);
+        gl.mesh.material.color.copy(gl.color).lerp(new THREE.Color(0xffffff), Math.min(1, u.flash));   // ピカッは白っぽく
+      });
+    }
+  });
+}
+
+// しぶき・炎・けむりのつぶ
+let fxParticles = [];
+const fxGeo = new THREE.SphereGeometry(0.8, 8, 6);
+// pos=出る場所 vel=速さ color=色 op=こさ life=秒 glow=光るか gravity=重力（マイナスなら上へ）grow=ふくらみ
+// size=はじめの大きさ（1がふつう）、clear=true なら嵐の霧の中でもかすまない
+function spawnFxParticle(pos, vel, color, op, life, glow, gravity, grow, size, clear) {
+  const m = new THREE.Mesh(fxGeo, glow ? glowMat(color, op) :
+    new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: op, depthWrite: false, fog: !clear }));
+  m.position.copy(pos);
+  scene.add(m);
+  fxParticles.push({ mesh: m, vel: vel, age: 0, life: life, op: op, gravity: gravity, grow: grow, size: size || 1 });
+}
+function updateFxParticles(dt) {
+  for (let i = fxParticles.length - 1; i >= 0; i--) {
+    const p = fxParticles[i];
+    p.age += dt;
+    p.mesh.visible = p.age >= 0;           // 少しおくれて出るもの（2重・3重のわ）は、時間が来るまでかくす
+    if (p.age < 0) continue;
+    p.vel.y -= p.gravity * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    const k = p.age / p.life;
+    p.mesh.scale.setScalar((p.size || 1) * (1 + k * p.grow));
+    p.mesh.material.opacity = p.op * Math.max(0, 1 - k * k);   // しばらくはっきり見えて、最後にすっと消える
+    if (k >= 1) {
+      scene.remove(p.mesh);
+      p.mesh.material.dispose();
+      fxParticles.splice(i, 1);
+    }
+  }
+}
+function clearFxParticles() {
+  fxParticles.forEach(p => { scene.remove(p.mesh); p.mesh.material.dispose(); });
+  fxParticles = [];
+}
+
+// ---------------------------------------------------------------------
+// 爆弾（Cキー）：下の発射台・船・潜水艦を破壊すると −1秒
+// ---------------------------------------------------------------------
+// 爆弾の形（こい灰色の胴体に、赤い先っぽと、うしろのはね）
+function buildBombModel() {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 2.4, 12), shiny(0x37474f));
+  body.rotation.x = Math.PI / 2;
+  g.add(body);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8), shiny(0xc62828));
+  nose.scale.z = 1.5;
+  nose.position.z = -1.3;
+  g.add(nose);
+  for (let i = 0; i < 4; i++) {
+    const fin = box(0.06, 0.9, 0.7, 0x263238, 0, 0, 1.3);
+    fin.geometry.translate(0, 0.45, 0);
+    fin.rotation.z = i * Math.PI / 2;
+    g.add(fin);
+  }
+  return g;
+}
+const bombModel = buildBombModel();
+
+// 爆弾の落ちる場所の目印（地面・海面の赤いわ）
+const bombSight = new THREE.Group();
+{
+  const ring = new THREE.Mesh(new THREE.RingGeometry(5, 6.2, 32), glowMat(0xff3d00, 0.8));
+  ring.rotation.x = -Math.PI / 2;
+  bombSight.add(ring);
+  const dot = new THREE.Mesh(new THREE.CircleGeometry(1.2, 16), glowMat(0xff3d00, 0.9));
+  dot.rotation.x = -Math.PI / 2;
+  bombSight.add(dot);
+  for (let i = 0; i < 4; i++) {                       // 十字のしるし
+    const bar = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 3), glowMat(0xff3d00, 0.9));
+    bar.rotation.x = -Math.PI / 2;
+    bar.rotation.z = i * Math.PI / 2;
+    bar.position.set(Math.sin(i * Math.PI / 2) * 8, 0, Math.cos(i * Math.PI / 2) * 8);
+    bombSight.add(bar);
+  }
+}
+bombSight.visible = false;
+scene.add(bombSight);
+
+// その場所の、地面か海面の高さ
+function surfaceHeight(x, z) {
+  return levelKey === 'hard' ? waveHeight(x, z) : 0;
+}
+
+// 爆弾を1つ落とす
+function dropBomb() {
+  const b = bombModel.clone();
+  b.position.copy(plane.pos).add(new THREE.Vector3(0, -1.5, 0));
+  b.userData.vel = planeForward3D().multiplyScalar(plane.speed).add(new THREE.Vector3(0, -3, 0));
+  scene.add(b);
+  bombs.push(b);
+  // ガコン（はずれる音）＋ ヒューーー（落ちていく音）
+  tone(220, 0, 0.08, 'square', 0.15, 120);
+  tone(1400, 0.05, 1.8, 'sine', 0.06, 450);
+}
+
+// 毎フレーム：爆弾を落とす・動かす・当たったか調べる・燃えているあと
+function updateBombs(dt) {
+  // Cキーで爆弾を落とす
+  bombTimer -= dt;
+  if (keys.KeyC && bombTimer <= 0) {
+    dropBomb();
+    bombTimer = CONFIG.BOMB_INTERVAL;
+  }
+  // 落ちる場所の目印：今落としたら、どこに落ちるかを計算して表示する
+  const v = planeForward3D().multiplyScalar(plane.speed).add(new THREE.Vector3(0, -3, 0));
+  const h = plane.pos.y - 1.5 - surfaceHeight(plane.pos.x, plane.pos.z);
+  const g = CONFIG.BOMB_GRAVITY;
+  const tFall = (v.y + Math.sqrt(Math.max(0, v.y * v.y + 2 * g * h))) / g;   // 地面（海面）に着くまでの時間
+  const ix = plane.pos.x + v.x * tFall, iz = plane.pos.z + v.z * tFall;
+  bombSight.position.set(ix, surfaceHeight(ix, iz) + 0.4, iz);
+  bombSight.visible = h > 3;
+  bombSight.children[0].material.opacity = 0.55 + 0.35 * Math.sin(worldTime * 8);
+  // 爆弾を動かす
+  for (let i = bombs.length - 1; i >= 0; i--) {
+    const b = bombs[i];
+    b.userData.vel.y -= g * dt;
+    b.position.addScaledVector(b.userData.vel, dt);
+    b.lookAt(b.position.clone().sub(b.userData.vel));     // 落ちる向きに先っぽを向ける
+    const ground = surfaceHeight(b.position.x, b.position.z);
+    if (b.position.y <= ground) {
+      bombImpact(b.position.clone().setY(ground));
+      scene.remove(b);
+      bombs.splice(i, 1);
+    }
+  }
+  // 破壊したあとは、しばらく燃えてけむりが上がる
+  wrecks.forEach(w => {
+    w.t -= dt;
+    w.spawn -= dt;
+    if (w.t > 0 && w.spawn <= 0) {
+      w.spawn = 0.08;
+      if (!w.sea) spawnFxParticle(w.pos.clone().add(new THREE.Vector3(rand(-6, 6), 1, rand(-6, 6))),
+        new THREE.Vector3(rand(-1, 1), rand(3, 6), rand(-1, 1)), 0xff6a00, 0.8, rand(0.4, 0.8), true, -1, 1.5);
+      spawnFxParticle(w.pos.clone().add(new THREE.Vector3(rand(-5, 5), 2, rand(-5, 5))),
+        new THREE.Vector3(rand(-1, 1) + windX, rand(4, 8), rand(-1, 1)), w.sea ? 0xe0e0e0 : 0x424242, 0.55, rand(1.5, 2.5), false, -0.5, 4);
+    }
+  });
+  wrecks = wrecks.filter(w => w.t > 0);
+}
+
+// 地面に落ちたときの、はっきり見える土の爆発（s = 大きさの倍率）
+function bigDirtBlast(pos, s) {
+  // 飛び散る土のかたまり（大きくて、遠くまで飛ぶ）
+  for (let i = 0; i < 70 * s; i++) {
+    const a = Math.random() * Math.PI * 2, sp = rand(6, 20) * s;
+    spawnFxParticle(pos.clone().add(new THREE.Vector3(rand(-2, 2), 1, rand(-2, 2))),
+      new THREE.Vector3(Math.cos(a) * sp, rand(14, 34) * s, Math.sin(a) * sp),
+      Math.random() < 0.5 ? 0x7a4e2d : 0x5a3a22, 1, rand(1.4, 2.2), false, 24, 0.3, rand(1.2, 2.4) * s, true);
+  }
+  // 飛び散る草のきれはし（緑）
+  for (let i = 0; i < 40 * s; i++) {
+    const a = Math.random() * Math.PI * 2, sp = rand(5, 16) * s;
+    spawnFxParticle(pos.clone().add(new THREE.Vector3(rand(-3, 3), 1, rand(-3, 3))),
+      new THREE.Vector3(Math.cos(a) * sp, rand(10, 26) * s, Math.sin(a) * sp),
+      Math.random() < 0.5 ? 0x5cbf3a : 0x3f8f2a, 1, rand(1.6, 2.6), false, 14, 0.2, rand(0.8, 1.4) * s, true);
+  }
+  // 土けむりの柱（もくもく高く上がって、ゆっくり広がる）
+  for (let i = 0; i < 26 * s; i++) {
+    spawnFxParticle(pos.clone().add(new THREE.Vector3(rand(-6, 6) * s, rand(1, 6), rand(-6, 6) * s)),
+      new THREE.Vector3(rand(-2.5, 2.5), rand(4, 12) * s, rand(-2.5, 2.5)),
+      Math.random() < 0.5 ? 0xb39b80 : 0x9c8468, 0.85, rand(3, 4.5), false, -0.8, 3.5, rand(3, 5) * s, true);
+  }
+  // 地面をはうように広がる土けむり
+  for (let i = 0; i < 18 * s; i++) {
+    const a = Math.random() * Math.PI * 2;
+    spawnFxParticle(pos.clone().add(new THREE.Vector3(0, 1.5, 0)),
+      new THREE.Vector3(Math.cos(a) * rand(12, 22) * s, rand(0.5, 2), Math.sin(a) * rand(12, 22) * s),
+      0xc2ab90, 0.75, rand(2.5, 3.5), false, 0, 3, rand(3, 4) * s, true);
+  }
+  // 地面を走る、光る衝撃波のわ（2重）
+  for (const [d, life] of [[0, 0.8], [0.15, 1.1]]) {
+    const wave = new THREE.Mesh(new THREE.RingGeometry(2, 3.5, 48), glowMat(0xffd180, 0.9));
+    wave.rotation.x = -Math.PI / 2;
+    wave.position.set(pos.x, 0.6 + d, pos.z);
+    scene.add(wave);
+    fxParticles.push({ mesh: wave, vel: new THREE.Vector3(), age: -d, life: life, op: 0.9, gravity: 0, grow: 18 * s });
+  }
+}
+
+// 海に落ちたときの、はっきり見える大きな水しぶき（s = 大きさの倍率）
+function bigSplash(pos, s) {
+  const y = Math.max(0.5, waveHeight(pos.x, pos.z));
+  const base = new THREE.Vector3(pos.x, y, pos.z);
+  // まっすぐ立ち上がる、太くて高い水の柱
+  for (let i = 0; i < 50 * s; i++) {
+    spawnFxParticle(base.clone().add(new THREE.Vector3(rand(-2.5, 2.5) * s, rand(0, 3), rand(-2.5, 2.5) * s)),
+      new THREE.Vector3(rand(-1.5, 1.5), rand(30, 55) * s, rand(-1.5, 1.5)), 0xffffff, 1, rand(1.6, 2.2), false, 26, 0.8, rand(1.6, 2.6) * s, true);
+  }
+  // 大きく広がる白い水しぶき
+  for (let i = 0; i < 70 * s; i++) {
+    const a = Math.random() * Math.PI * 2, sp = rand(8, 22) * s;
+    spawnFxParticle(base.clone().add(new THREE.Vector3(0, 1, 0)),
+      new THREE.Vector3(Math.cos(a) * sp, rand(12, 28) * s, Math.sin(a) * sp), 0xf2f8ff, 0.95, rand(1.3, 2.0), false, 24, 0.8, rand(1.2, 2) * s, true);
+  }
+  // ふわっと残る白い水けむり
+  for (let i = 0; i < 16 * s; i++) {
+    spawnFxParticle(base.clone().add(new THREE.Vector3(rand(-6, 6) * s, rand(2, 10), rand(-6, 6) * s)),
+      new THREE.Vector3(rand(-2, 2), rand(1, 4), rand(-2, 2)), 0xe8f2fa, 0.6, rand(2.5, 3.5), false, -0.3, 3, rand(3, 5) * s, true);
+  }
+  // 海面に広がる白い波の輪（3重）
+  for (const [d, life] of [[0, 1.4], [0.25, 1.8], [0.5, 2.2]]) {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(3, 4.5, 48), new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(pos.x, y + 0.3, pos.z);
+    scene.add(ring);
+    fxParticles.push({ mesh: ring, vel: new THREE.Vector3(), age: -d, life: life, op: 0.9, gravity: 0, grow: 12 * s });
+  }
+  // 海面に残る白いあわ
+  const foam = new THREE.Mesh(new THREE.CircleGeometry(14 * s, 28), new THREE.MeshBasicMaterial({
+    color: 0xf4faff, transparent: true, opacity: 0.7, depthWrite: false, fog: false }));
+  foam.rotation.x = -Math.PI / 2;
+  foam.position.set(pos.x, y + 0.35, pos.z);
+  scene.add(foam);
+  fxParticles.push({ mesh: foam, vel: new THREE.Vector3(), age: 0, life: 5, op: 0.7, gravity: 0, grow: 0.8 });
+}
+
+// 爆弾が地面・海面に落ちたとき
+function bombImpact(pos) {
+  startBombCam(pos);                       // 高度に関係なく、着弾のようすを小さな窓に必ず映す
+  const sea = levelKey === 'hard';
+  // 近くの発射台・船・潜水艦をさがす
+  let hit = null, best = CONFIG.BOMB_HIT_RADIUS;
+  samSites.forEach(st => {
+    const d = Math.hypot(st.position.x - pos.x, st.position.z - pos.z);
+    if (d < best) { best = d; hit = st; }
+  });
+  if (hit) return destroySite(hit);
+  // はずれても、着弾の演出は大きく
+  if (sea) {
+    // 上級：海に落ちて「ドボーン！」と大きな水しぶき
+    bigSplash(pos, 1);
+    tone(70, 0, 0.6, 'sine', 0.6, 35);                     // ドボーン
+    noiseBurst(0.02, 1.0, 0.7, 'lowpass', 2200, 200, 0.01);
+    cameraShake = Math.max(cameraShake, 0.35);
+  } else {
+    // 初級：地面に落ちて大爆発。地ひびきがして、地面が大きくゆれ、黒こげのあとが残る
+    makeExplosion(pos.clone().add(new THREE.Vector3(0, 2, 0)), 11, 0.8);
+    makeExplosion(pos.clone().add(new THREE.Vector3(rand(-4, 4), 1, rand(-4, 4))), 7, 0.6);
+    bigDirtBlast(pos, 1);                                  // 飛び散る土・もくもくの土けむり・衝撃波
+    const scorch = new THREE.Mesh(new THREE.CircleGeometry(11, 20), new THREE.MeshBasicMaterial({
+      color: 0x111111, transparent: true, opacity: 0.85, depthWrite: false }));   // 黒こげのあと（コースに残る）
+    scorch.rotation.x = -Math.PI / 2;
+    scorch.rotation.z = rand(0, Math.PI);
+    scorch.scale.set(1, rand(0.7, 1), 1);
+    scorch.position.set(pos.x, 0.45, pos.z);
+    courseGroup.add(scorch);
+    // ズドォォン……ゴゴゴゴ（地ひびき）
+    noiseBurst(0, 0.5, 0.8, 'lowpass', 3000, 150, 0.003);
+    tone(60, 0, 1.6, 'sine', 0.8, 28);
+    noiseBurst(0.1, 2.2, 0.55, 'lowpass', 220, 40, 0.15);
+    tone(38, 0.1, 2.0, 'sawtooth', 0.12, 25);
+    cameraShake = Math.max(cameraShake, 1.4);              // 地面が大きくゆれる
+  }
+}
+
+// 発射台・船・潜水艦を破壊！ −1秒
+function destroySite(site) {
+  const pos = site.position.clone();
+  const kind = site.userData.kind;
+  const sea = levelKey === 'hard';
+  // 大爆発
+  makeExplosion(pos.clone().add(new THREE.Vector3(0, 4, 0)), 18, 1.0);
+  makeExplosion(pos.clone().add(new THREE.Vector3(rand(-8, 8), 2, rand(-8, 8))), 10, 0.8);
+  makeExplosion(pos.clone().add(new THREE.Vector3(rand(-8, 8), 6, rand(-8, 8))), 8, 0.7);
+  for (let i = 0; i < 24; i++) {                                 // とびちる火のこ
+    spawnFxParticle(pos.clone().add(new THREE.Vector3(0, 3, 0)),
+      new THREE.Vector3(rand(-14, 14), rand(10, 26), rand(-14, 14)), 0xffa040, 1, rand(0.8, 1.4), true, 25, 0.5);
+  }
+  if (sea) bigSplash(pos, 1.4);                                 // 海では、さらに大きな水柱と水しぶき
+  else bigDirtBlast(pos, 1.3);                                   // 地上では、さらに大きな土の爆発
+  if (kind === 'sub') {                                          // 潜水艦：海の中がピカッと光る
+    (site.userData.glows || []).forEach(gl => { gl.mesh.material.color.setHex(0xffffff); });
+  }
+  playExplosionSound();
+  tone(55, 0, 1.2, 'sawtooth', 0.25, 30);
+  cameraShake = Math.max(cameraShake, 0.6);
+  // 予約中の発射を取りけし、発射台・船をなくす
+  samPending = samPending.filter(w => { if (w.site === site) { scene.remove(w.ring); return false; } return true; });
+  samSites = samSites.filter(st => st !== site);
+  site.parent.remove(site);
+  // 地上は黒こげのあと、海は白いあわ。しばらく燃えてけむりが上がる
+  const scorch = new THREE.Mesh(new THREE.CircleGeometry(sea ? 20 : 26, 24), new THREE.MeshBasicMaterial({
+    color: sea ? 0xe8f4ff : 0x111111, transparent: true, opacity: sea ? 0.5 : 0.85, depthWrite: false }));
+  scorch.rotation.x = -Math.PI / 2;
+  scorch.position.set(pos.x, (sea ? 0.35 : 0.5), pos.z);
+  courseGroup.add(scorch);
+  wrecks.push({ pos: pos, t: 8, spawn: 0, sea: sea });
+  // ボーナス
+  bombKills++;
+  bonus += CONFIG.BOMB_BONUS;
+  const names = { silo: '地下基地', sub: '潜水艦' };
+  const name = names[kind] || (sea ? '艦船' : 'パトリオット');
+  showPopup(name + '撃破！ −' + CONFIG.BOMB_BONUS + '秒', '#ffeb3b');
+}
+
 // 発射台から、警告つきでミサイルを予約する
 function scheduleSam() {
   const ax = planeAxes();
@@ -3767,6 +4380,8 @@ function scheduleSam() {
   ring.position.copy(site.position).setY(site.position.y + 1);
   scene.add(ring);
   samPending.push({ site: site, timer: CONFIG.SAM_WARNING_TIME, ring: ring });
+  if (site.userData.kind === 'silo') openSiloHatch(site);     // ガガガッ…とハッチが開く
+  if (site.userData.kind === 'sub') surfaceSub(site);         // 潜水艦の黒い巨体が浮かび上がる
   // 警報「ビーッ、ビーッ」
   tone(760, 0, 0.18, 'sawtooth', 0.12);
   tone(760, 0.25, 0.18, 'sawtooth', 0.12);
@@ -3778,11 +4393,25 @@ function scheduleSam() {
 function launchSam(site) {
   site.updateMatrixWorld(true);
   const mz = site.userData.muzzleObj;
-  const pos = mz ? mz.getWorldPosition(new THREE.Vector3()) : site.localToWorld(site.userData.muzzle.clone());
+  let pos;
+  if (site.userData.kind === 'sub') {
+    // 潜水艦：船体の発射管（海の中）から
+    pos = site.userData.body.localToWorld(new THREE.Vector3(0, 2.6, 5));
+    pos.y = Math.min(pos.y, -5);                     // かならず海の中から
+  } else {
+    pos = mz ? mz.getWorldPosition(new THREE.Vector3()) : site.localToWorld(site.userData.muzzle.clone());
+  }
   const m = samModel.clone();
   m.position.copy(pos);
   const toPlane = plane.pos.clone().sub(pos).normalize();
-  if (mz) {
+  const kind = site.userData.kind;
+  if (kind === 'silo') {
+    // 地下基地：真っ暗な縦穴から、ななめ上へ飛び出す
+    m.userData.dir = new THREE.Vector3(0, 1, 0).multiplyScalar(0.7).addScaledVector(toPlane, 0.3).normalize();
+  } else if (kind === 'sub') {
+    // 潜水艦：水中の発射管から、真上へ勢いよく飛び出す
+    m.userData.dir = new THREE.Vector3(0, 1, 0);
+  } else if (mz) {
     // パトリオット：ななめの発射筒の向きに勢いよく飛び出して、それから自機を追いかける
     const tube = mz.getWorldDirection(new THREE.Vector3()).negate();
     m.userData.dir = tube.multiplyScalar(0.75).addScaledVector(toPlane, 0.25).normalize();
@@ -3803,6 +4432,14 @@ function launchSam(site) {
   // 「シュバァッ！」
   noiseBurst(0, 0.9, 0.5, 'bandpass', 600, 3000, 0.01);
   tone(140, 0, 0.4, 'sawtooth', 0.15, 60);
+  if (kind === 'silo') siloLaunchFx(site, pos);
+  if (kind === 'sub') {
+    site.userData.flash = 1.3;             // 水面下の光が「ピカッ」と強く光る
+    m.userData.underwater = true;          // 海面をつきやぶった瞬間に、水しぶきを上げる
+    m.userData.speed = level.samSpeed * 1.3;
+    tone(50, 0, 0.6, 'sine', 0.5, 35);     // 海の中の「ドゥン」
+    noiseBurst(0, 0.4, 0.3, 'lowpass', 500, 150, 0.01);
+  }
 }
 
 // 毎フレームの、地上・海上ミサイルの処理
@@ -3974,7 +4611,7 @@ function showResult() {
   $('resultDetail').innerHTML = '【' + level.name + '】 飛行 ' + formatTime(elapsed) +
     ' ＋ ペナルティ ' + penalty + '秒 − ボーナス ' + bonus + '秒（パーフェクト・撃墜）<br>' +
     'パーフェクト ' + perfectCount + ' ／ 成功 ' + (passCount - perfectCount) + ' ／ 衝突 ' + hitCount +
-    ' ／ 失敗 ' + missCount + ' ／ 被弾 ' + gunHits + ' ／ 撃墜 ' + shootDowns + (landed ? ' ／ <b style="color:#ffeb3b">PERFECT LANDING −' + CONFIG.LANDING_BONUS + '秒</b>' : '') + ' ／ ミサイル撃墜 ' + missileDowns + ' ／ 迎撃 ' + samDowns + (level.obstacles > 0 ? ' ／ 気球 ' + balloonHits : '');
+    ' ／ 失敗 ' + missCount + ' ／ 被弾 ' + gunHits + ' ／ 撃墜 ' + shootDowns + (landed ? ' ／ <b style="color:#ffeb3b">PERFECT LANDING −' + CONFIG.LANDING_BONUS + '秒</b>' : '') + ' ／ ミサイル撃墜 ' + missileDowns + ' ／ 迎撃 ' + samDowns + ' ／ 爆撃 ' + bombKills + (level.obstacles > 0 ? ' ／ 気球 ' + balloonHits : '');
   $('resultRank').textContent = rank;
   $('resultRank').className = 'rank' + rank;
   $('newBest').textContent = isBest ? '★ 自己ベスト更新！ ★' : '';
@@ -4073,6 +4710,7 @@ function animateDecor() {
   }));
   // 上級の軍艦・ミサイル艇は、波の上でゆれる
   if (levelKey === 'hard') samSites.forEach(sh => {
+    if (sh.userData.kind === 'sub') return;           // 潜水艦は updateSilosAndSubs で動かす
     const ph = sh.userData.phase;
     sh.position.y = waveHeight(sh.position.x, sh.position.z) * 0.8 + Math.sin(worldTime * 1.2 + ph) * 0.3;
     sh.rotation.z = Math.sin(worldTime * 0.9 + ph) * (0.03 + clamp(weatherLevel - 1, 0, 1) * 0.08);
@@ -4510,8 +5148,10 @@ scene.add(sprayPoints);
 function buildWaveMesh() {
   waveMesh = new THREE.Mesh(waveGeo, new THREE.MeshPhongMaterial({
     color: SEA_COLOR, vertexColors: true, flatShading: true,   // 海と同じ色。角ばった面で、荒れた感じを出す
+    transparent: true, opacity: CONFIG.SEA_OPACITY,              // 嵐の波も、海の中が透けて見える
     shininess: 5, specular: 0x000000 }));
   waveMesh.frustumCulled = false;
+  waveMesh.renderOrder = -1;
   waveMesh.visible = false;
   scene.add(waveMesh);
 }
@@ -4706,6 +5346,47 @@ function drawGauges() {
 // =====================================================================
 // 17. ウィンドウの大きさが変わったときの調整
 // =====================================================================
+// ---------------------------------------------------------------------
+// 着弾カメラ：爆弾が落ちた場所を、画面の右に小さな窓で約3秒映す
+//   （爆弾は機体の真下あたりに落ちるので、ふつうのカメラでは高く飛ぶと見えないため）
+// ---------------------------------------------------------------------
+const bombCam = new THREE.PerspectiveCamera(55, 16 / 10, 0.5, 3000);
+let bombCamView = null;        // { pos: 着弾した場所, t: 残り時間, age: 経過時間 }
+function startBombCam(pos) {
+  bombCamView = { pos: pos.clone(), t: CONFIG.BOMB_CAM_TIME, age: 0, side: Math.random() < 0.5 ? -1 : 1 };
+}
+function renderBombCam(dt) {
+  const el = $('bombCam');
+  if (!bombCamView) { el.style.display = 'none'; return; }
+  if (!paused) { bombCamView.t -= dt; bombCamView.age += dt; }
+  if (bombCamView.t <= 0) { bombCamView = null; el.style.display = 'none'; return; }
+  // 窓の大きさと場所（画面の右、まんなかより少し下）
+  const W = window.innerWidth, H = window.innerHeight;
+  const w = Math.round(Math.min(W * 0.36, 460)), h = Math.round(w * 0.62);
+  const x = W - w - 16, top = Math.round(H * 0.36);
+  // カメラ：着弾した場所を、ななめ上から、ゆっくり回りこみながら映す
+  const v = bombCamView, p = v.pos;
+  const a = v.side * (0.9 + v.age * 0.25);
+  const dist = levelKey === 'hard' ? 95 : 80;
+  bombCam.position.set(p.x + Math.sin(a) * dist, p.y + 42, p.z + Math.cos(a) * dist);
+  bombCam.lookAt(p.x, p.y + 14, p.z);
+  bombCam.aspect = w / h;
+  bombCam.updateProjectionMatrix();
+  // 画面の一部（窓のところ）だけに描く
+  const y = H - top - h;                         // three.js は左下が原点
+  renderer.setScissorTest(true);
+  renderer.setScissor(x, y, w, h);
+  renderer.setViewport(x, y, w, h);
+  renderer.render(scene, bombCam);
+  renderer.setScissorTest(false);
+  renderer.setViewport(0, 0, W, H);
+  // わく
+  el.style.display = 'block';
+  el.style.left = x + 'px'; el.style.top = top + 'px';
+  el.style.width = w + 'px'; el.style.height = h + 'px';
+  el.style.opacity = Math.min(1, v.t / 0.4);
+}
+
 function onResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
