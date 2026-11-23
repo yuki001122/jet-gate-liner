@@ -21,6 +21,17 @@
   #hudPenalty { right: 14px; color: #ffd54f; }
   #warning { position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
     color: #ff5252; font-size: 22px; font-weight: bold; text-shadow: 0 2px 4px #000; display: none; }
+  /* 墜落・激突のあとに画面の中央に出る、赤い警告文字のカットイン */
+  #crashCutin { position: absolute; top: 50%; left: 0; right: 0; transform: translateY(-50%);
+    text-align: center; pointer-events: none; display: none; z-index: 30;
+    background: linear-gradient(90deg, rgba(120,0,0,0), rgba(120,0,0,.55) 20%, rgba(120,0,0,.55) 80%, rgba(120,0,0,0));
+    border-top: 3px solid #ff1744; border-bottom: 3px solid #ff1744; padding: 14px 16px; }
+  #crashCutin.show { display: block; animation: cutinIn .35s ease-out; }
+  #crashCutin .big { color: #ff3d3d; font-size: clamp(48px, 12vw, 110px); font-weight: 900; letter-spacing: 6px;
+    text-shadow: 0 0 6px #fff, 0 0 14px #ff1744, 0 0 34px #ff1744, 0 4px 6px #000; animation: crashPulse .45s infinite alternate; }
+  @keyframes crashPulse { from { opacity: 1; transform: scale(1.04); } to { opacity: .75; transform: scale(1); } }
+  #crashCutin .sub { color: #ff8a80; font-size: clamp(20px, 5vw, 36px); font-weight: bold; text-shadow: 0 2px 6px #000; margin-top: 4px; }
+  @keyframes cutinIn { from { transform: translateY(-50%) scaleX(0); opacity: 0; } to { transform: translateY(-50%) scaleX(1); opacity: 1; } }
   #enemyWarn { position: absolute; top: 104px; left: 50%; transform: translateX(-50%);
     color: #ff8a80; font-size: 20px; font-weight: bold; text-shadow: 0 2px 4px #000; display: none;
     animation: blink .4s infinite alternate; }
@@ -186,6 +197,7 @@
   <div class="hudBox" id="hudGate">GATE 0 / 30</div>
   <div class="hudBox" id="hudWeather">☀ 晴れ</div>
   <div class="hudBox" id="hudPenalty">ペナルティ +0秒 ／ ボーナス −0秒</div>
+  <div id="crashCutin"><div class="big">CRASH!</div><div class="sub" id="crashCutinSub"></div></div>
   <div id="warning">⚠ エリアの外／地面に近づいています！</div>
   <div id="enemyWarn">⚠ 前方に戦闘機！ 赤い弾をよけろ！</div>
   <div id="landingGuide"></div>
@@ -315,7 +327,8 @@
 // 1. 調整したい数字（ここを変えるとゲームの難しさが変わります）
 // =====================================================================
 const CONFIG = {
-  CRASH_SHOW_TIME: 10,          // 墜落・激突の爆発シーンを見せる秒数（そのあと GAME OVER・エリア外の画面）
+  CRASH_SHOW_TIME: 10,
+  CRASH_ANNOUNCE_TIME: 4.5,     // 爆発のあと「CRASH!」の赤い文字と音声アナウンスを出す秒数（そのあと GAME OVER の画面）          // 墜落・激突の爆発シーンを見せる秒数（そのあと GAME OVER・エリア外の画面）
   AREA_GRACE: 150,              // 左右にエリアの外へ出ても、このはばまでは飛びつづける（そのあいだに山・陸地にぶつかると爆発）
   CRASH_CAM_DIST: 130,          // 墜落・激突の爆発を映すカメラの距離（大きいほど爆発が小さく見える。130 で画面の半分くらい）
   GATE_SPIN: 0.25,              // 初級・中級：ゲートが回る速さ（となりのゲートと逆向き）
@@ -3095,6 +3108,7 @@ function showScreen(id) {
 }
 
 function goTitle() {
+  hideCrashCutin();
   if (nameEntryActive) finishNameEntry();             // ネームエントリーのとちゅうでタイトルへもどったときは、そこで決定
   paused = false;
   resetGear();
@@ -3147,6 +3161,7 @@ function showHowto() {
 
 // ゲーム開始（発進待ちの状態にする）
 function startGame() {
+  hideCrashCutin();
   lastHitStructure = null;
   crashView = null;
   buildCourse();
@@ -3629,7 +3644,7 @@ function checkLanding() {
     // 甲板より下の高さのまま船体に入った（うしろや横から突っこんだ）
     const inHull = Math.abs(local.x) < 17 && Math.abs(local.z) < 62 && local.y < 12.6 && prevH < -0.4;
     const inTower = Math.abs(local.x - 13) < 3.5 && Math.abs(local.z - 15) < 10.5 && local.y < 31.5;
-    if (inHull || inTower) return gameOver('空母に激突してしまいました…', 'bridge');
+    if (inHull || inTower) return gameOver('空母に激突してしまいました…', 'bridge', '空母に激突');
   }
 
   const overDeck = Math.abs(local.x) < L.halfW && Math.abs(local.z) < L.halfL;
@@ -4489,7 +4504,7 @@ function checkCrash() {
   // 上級の嵐では、荒波の高さもふくめて判定する
   const sea = levelKey === 'hard' ? waveHeight(p.x, p.z) : 0;
   if (p.y < CONFIG.GROUND_LIMIT_Y + sea && !overLandingSurface) {   // 滑走路の上では、接地として別に調べる
-    return gameOver(sea > 1 ? '荒波にのみこまれてしまいました…' : (levelKey === 'hard' ? '海に墜落してしまいました…' : '地面に墜落してしまいました…'), levelKey === 'hard' ? 'sea' : 'ground');
+    return gameOver(sea > 1 ? '荒波にのみこまれてしまいました…' : (levelKey === 'hard' ? '海に墜落してしまいました…' : '地面に墜落してしまいました…'), levelKey === 'hard' ? 'sea' : 'ground', levelKey === 'hard' ? '海に墜落' : '地面に墜落');
   }
   const AX = areaLimitX();
   const OUT = 'エリアの外に出てしまいました…';
@@ -4498,29 +4513,29 @@ function checkCrash() {
   if (levelKey === 'hard' && cliffData && Math.abs(p.x) > STRAIT_EDGE - 30) {
     const side = Math.sign(p.x);
     const sg = cliffData.segs.find(c => c.side === side && Math.abs(p.z - c.z) <= cliffData.SEG / 2 + 3);
-    if (sg && Math.abs(p.x) > sg.inner - 2 && p.y < (sg.cur !== undefined ? sg.cur : sg.h) - 1) return gameOver(OUT, 'ground');   // 海峡の両はしの陸地に激突
+    if (sg && Math.abs(p.x) > sg.inner - 2 && p.y < (sg.cur !== undefined ? sg.cur : sg.h) - 1) return gameOver(OUT, 'ground', '陸地に激突');   // 海峡の両はしの陸地に激突
   }
   if (Math.abs(p.x) > AX + CONFIG.AREA_GRACE) return gameOver(OUT);
   if (levelKey === 'hard' && invincible <= 0) {                // 上級：橋・空母にぶつかった
     const msg = checkStructures();
-    if (msg) return gameOver(msg, 'bridge');                     // 橋・塔・空母（鉄のかたまり）にぶつかった
+    if (msg) return gameOver(msg, 'bridge', msg.indexOf('空母') >= 0 ? '空母に激突' : (msg.indexOf('塔') >= 0 ? '橋の塔に激突' : '橋に激突'));                     // 橋・塔・空母（鉄のかたまり）にぶつかった
   }
   if (levelKey !== 'hard') {                                   // 練習・初級・中級：山・丘にぶつかった
     for (const mt of mountains) {
       const r = mt.userData.r, h = mt.userData.h;
       const d = Math.hypot(p.x - mt.position.x, p.z - mt.position.z);
-      if (d < r && p.y < mt.position.y - h / 2 + h * (1 - d / r) + 1.5) return gameOver('エリアの外に出てしまいました…', 'ground');   // 山：爆発してから「エリア外」
+      if (d < r && p.y < mt.position.y - h / 2 + h * (1 - d / r) + 1.5) return gameOver('エリアの外に出てしまいました…', 'ground', '山に激突');   // 山：爆発してから「エリア外」
     }
     for (const hl of hills) {
       const r = hl.userData.r;
       const d = Math.hypot(p.x - hl.position.x, p.z - hl.position.z);
-      if (d < r && p.y < Math.sqrt(r * r - d * d) * hl.scale.y + 1.5) return gameOver('エリアの外に出てしまいました…', 'ground');   // 丘も同じ
+      if (d < r && p.y < Math.sqrt(r * r - d * d) * hl.scale.y + 1.5) return gameOver('エリアの外に出てしまいました…', 'ground', '丘に激突');   // 丘も同じ
     }
   }
   if (levelKey === 'hard') for (const isl of straitIslands) {   // 上級：島にぶつかった
     if (!isl.visible) continue;
     const d = Math.hypot(p.x - isl.position.x, p.z - isl.position.z);
-    if (d < isl.userData.rock && p.y < isl.userData.h * Math.sqrt(Math.max(0, 1 - Math.pow(d / isl.userData.rock, 2))) + 3) return gameOver('島に激突してしまいました…', 'ground');
+    if (d < isl.userData.rock && p.y < isl.userData.h * Math.sqrt(Math.max(0, 1 - Math.pow(d / isl.userData.rock, 2))) + 3) return gameOver('島に激突してしまいました…', 'ground', '島に激突');
   }
   // 危ないときは警告を出す
   const danger = Math.abs(p.x) > AX - 40 || p.y > CONFIG.CEILING_Y - 30 ||
@@ -4529,7 +4544,7 @@ function checkCrash() {
 }
 
 let gameOverRun = 0;
-function gameOver(reason, crash) {
+function gameOver(reason, crash, cause) {
   stopBrakeSound();
   phase = 'gameover';
   stopBGM(true);
@@ -4541,7 +4556,40 @@ function gameOver(reason, crash) {
   $('gameoverReason').textContent = reason;
   if (crash) crashFx(crash, pos);                      // 墜落・激突の大爆発（見終わってからゲームオーバーの画面へ）
   const myRun = ++gameOverRun;                         // 「もう一回」のあとに、前のゲームオーバー画面が出ないように
-  setTimeout(() => { if (phase === 'gameover' && myRun === gameOverRun) { $('hud').style.display = 'none'; showScreen('gameoverScreen'); } }, crash ? CONFIG.CRASH_SHOW_TIME * 1000 : 600);   // 爆発シーンを見せてから
+  const toScreen = () => { if (phase === 'gameover' && myRun === gameOverRun) { hideCrashCutin(); $('hud').style.display = 'none'; showScreen('gameoverScreen'); } };
+  if (!crash) { setTimeout(toScreen, 600); return; }
+  if (!cause) cause = levelKey === 'hard' ? '海に墜落' : '地面に墜落';
+  // 爆発シーンを 10 秒見せてから → 赤い「CRASH!」のカットイン＋音声アナウンス → GAME OVER の画面
+  setTimeout(() => {
+    if (phase !== 'gameover' || myRun !== gameOverRun) return;
+    crashAnnounce(cause);
+    setTimeout(toScreen, CONFIG.CRASH_ANNOUNCE_TIME * 1000);
+  }, CONFIG.CRASH_SHOW_TIME * 1000);
+}
+
+// 墜落・激突のアナウンス：画面の中央に赤い警告文字を出して、声で読み上げる
+//   練習・初級・中級は「ジェット機」、上級は「戦闘機」
+function crashAnnounce(cause) {
+  const plane = levelKey === 'hard' ? '戦闘機' : 'ジェット機';
+  $('crashCutinSub').textContent = '(' + cause + '・炎上)';
+  const el = $('crashCutin');
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');   // アニメーションを最初から
+  tone(880, 0.25, 0.35, 'square', 0.08, 660);                                     // ビーッ（警報音）
+  setTimeout(() => tone(880, 0.25, 0.35, 'square', 0.08, 660), 300);
+  try {
+    if (sound.on && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      const v = new SpeechSynthesisUtterance(cause + 'して、' + plane + 'が炎上しました');
+      v.lang = 'ja-JP'; v.rate = 1.0; v.pitch = 1.0; v.volume = 1;
+      const ja = window.speechSynthesis.getVoices().find(x => /^ja/i.test(x.lang));
+      if (ja) v.voice = ja;
+      window.speechSynthesis.speak(v);
+    }
+  } catch (e) { /* 読み上げできなくてもゲームは続ける */ }
+}
+function hideCrashCutin() {
+  $('crashCutin').classList.remove('show');
+  try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
 }
 
 // ---------------------------------------------------------------------
@@ -4643,21 +4691,126 @@ function snowFieldCrash(p0, g0) {
     for (let i = 0; i < 30; i++) spawnFxParticle(base.clone().add(new THREE.Vector3(rand(-8, 8), rand(2, 6), rand(-8, 8))),
       new THREE.Vector3(rand(-4, 4), rand(4, 12), rand(-4, 4)), pick([0xffffff, 0xe8eef3, 0xd8dfe5]), 0.6, rand(3.5, 5), false, -1, 6, rand(4, 7), true);
   });
-  // 雪原をえぐる、深くて黒いクレーター。まわりに黒いススと金属片
-  const crater = new THREE.Mesh(new THREE.CircleGeometry(15, 28), new THREE.MeshBasicMaterial({ color: 0x0a0a0a, transparent: true, opacity: 0.95, depthWrite: false }));
-  crater.rotation.x = -Math.PI / 2; crater.position.set(base.x, g0 + 0.6, base.z);
-  courseGroup.add(crater);
-  const rim = new THREE.Mesh(new THREE.RingGeometry(14, 19, 32), new THREE.MeshBasicMaterial({ color: 0x3a342e, transparent: true, opacity: 0.8, depthWrite: false }));
-  rim.rotation.x = -Math.PI / 2; rim.position.set(base.x, g0 + 0.55, base.z);
-  courseGroup.add(rim);
-  for (let i = 0; i < 16; i++) {                                     // 飛び散った黒いスス
-    const a = Math.random() * Math.PI * 2, d = rand(18, 45), r = rand(2, 6);
-    const soot = new THREE.Mesh(new THREE.CircleGeometry(r, 10), new THREE.MeshBasicMaterial({ color: 0x141414, transparent: true, opacity: rand(0.5, 0.85), depthWrite: false }));
-    soot.rotation.x = -Math.PI / 2; soot.position.set(base.x + Math.cos(a) * d, g0 + 0.5, base.z + Math.sin(a) * d);
-    soot.scale.set(1, rand(0.4, 1), 1);
-    courseGroup.add(soot);
-  }
   flingPieces(p0, 20, { small: true, min: 0.4, max: 1.4, up0: 12, up1: 36 });   // 雪原に散らばる金属片
+}
+
+// ---------------------------------------------------------------------
+// 墜落したあとの地面の跡（練習・初級・中級）
+//   「きれいな丸」ではなく、「衝撃でえぐれて飛び散った跡」にする
+//   ・中心：機体が突っこんだ向きに少し縦長にえぐれた、黒ずんだクレーター（くぼみ・焦げ跡）
+//   ・その手前：機体が地面をこすった、細長いえぐれ跡
+//   ・外がわ：放射状に押しやられた雪（土）の、ギザギザで不ぞろいな盛り上がりと、すじ状の吹き飛び跡
+//   ・さらに外：バラバラに散らばる黒いススのドットと、機体の小さな破片
+//   雪の上（中級）では、真っ白な雪面に黒い焦げ跡と破片がくっきり浮かび上がる
+// ---------------------------------------------------------------------
+// ふちがギザギザで、少しゆがんだ形の板（geometry の +Y が「前」）
+function jagDisc(r, amp, sx, sy, seg) {
+  seg = seg || 64;
+  const geo = new THREE.CircleGeometry(r, seg);
+  const pa = geo.attributes.position;
+  const ph = [rand(0, 6), rand(0, 6), rand(0, 6)];
+  for (let i = 1; i < pa.count; i++) {                   // 0 番は中心の点
+    const x = pa.getX(i), y = pa.getY(i), a = Math.atan2(y, x);
+    const k = 1 + amp * (0.55 * Math.sin(a * 3 + ph[0]) + 0.3 * Math.sin(a * 7 + ph[1]) + 0.25 * Math.sin(a * 13 + ph[2]) + rand(-0.22, 0.22));
+    pa.setX(i, x * k * sx); pa.setY(i, y * k * sy);
+  }
+  const last = pa.count - 1;                              // 輪っかの最後の点を、最初の点とつなげる（すき間ができないように）
+  pa.setX(last, pa.getX(1)); pa.setY(last, pa.getY(1));
+  return geo;
+}
+//   bomb = true：爆弾の着弾あと（墜落より小さく、ほぼ真上から落ちるので、こすった跡はなく丸みが強い）
+function makeCrashScar(base, yaw, snowy, bomb) {
+  const g = new THREE.Group();
+  const gy = bomb ? Math.max(0, base.y) : 0;
+  g.position.set(base.x, gy, base.z);
+  g.rotation.y = yaw;
+  const sx = bomb ? 0.72 : 1, sz = bomb ? 0.56 : 1;      // 爆弾は小さめ（前後方向を少しちぢめて、縦長を弱める）
+  g.scale.set(sx, 1, sz);                                     // この中では -Z が「機体が進んでいた向き」
+  courseGroup.add(g);
+  let order = 2;
+  const flat = (geo, color, op, x, z, y, rot) => {
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: op, depthWrite: false }));
+    m.rotation.set(-Math.PI / 2, 0, rot || 0);
+    m.position.set(x, y, z);
+    m.renderOrder = order++;
+    g.add(m);
+    return m;
+  };
+  // 向き θ（0 が前）と距離 d から、この中での位置。前のほうに多く飛び、前は少し遠くまで飛ぶ
+  const spot = (d0, d1) => {
+    const th = Math.random() < 0.6 ? rand(-1.1, 1.1) : rand(-Math.PI, Math.PI);
+    const d = rand(d0, d1) * (1 + 0.35 * Math.max(0, Math.cos(th)));
+    return { x: Math.sin(th) * d, z: -Math.cos(th) * d - 4, th: th };
+  };
+  // ① いちばん外：うすく広がった黒いススの焦げ跡（ゆがんだ形）
+  flat(jagDisc(30, 0.32, 1.0, 1.35), 0x1c1813, snowy ? 0.5 : 0.42, 0, -8, 0.42);
+  // ② 機体が地面をこすりながら突っこんだ、細長いえぐれ跡（クレーターの手前がわ）。爆弾にはない
+  if (!bomb) flat(jagDisc(5.5, 0.3, 0.75, 3.4, 28), 0x110d0a, 0.88, rand(-1, 1), 15, 0.46);
+  if (!bomb) for (const sx of [-1, 1]) flat(jagDisc(1.3, 0.25, 0.6, 9, 16), 0x0c0a08, 0.7, sx * rand(3.5, 5), 13 + rand(-2, 2), 0.47, sx * 0.06);   // 2本の引っかき傷
+  // ③ 中心：少し縦長・ななめにえぐれた、黒ずんだクレーター
+  flat(jagDisc(16, 0.26, 0.85, 1.4), 0x0b0907, 0.95, 0, -3, 0.5, rand(-0.15, 0.15));
+  flat(jagDisc(9, 0.3, 0.8, 1.3, 30), 0x030303, 1, rand(-1, 1), -1, 0.54);   // いちばん深いくぼみ（真っ黒）
+  flat(jagDisc(5, 0.35, 1, 1.2, 20), 0x2b1a10, 0.75, rand(-2, 2), -6, 0.56);  // 焼けた土がのぞく、こげ茶のところ
+  // ④ 外がわ：放射状に押しやられた雪（土）の、すじ状の吹き飛び跡
+  const rayC = snowy ? 0xffffff : 0x6b4a2e;
+  for (let i = 0; i < 16; i++) {
+    const th = (i / 16) * Math.PI * 2 + rand(-0.15, 0.15);
+    const len = rand(10, 22) * (1 + 0.6 * Math.max(0, Math.cos(th)));
+    const d = 22 * (1 + 0.3 * Math.max(0, Math.cos(th))) + len * 0.5;
+    flat(jagDisc(1, 0.3, rand(1.2, 2.6), len * 0.5, 14), rayC, snowy ? 0.85 : 0.7, Math.sin(th) * d, -Math.cos(th) * d - 4, 0.48, th);
+  }
+  // ⑤ クレーターのふち：ギザギザで不ぞろいな、雪の壁・吹きだまり（土なら、土の盛り上がり）
+  const moundMat = snowy ? new THREE.MeshLambertMaterial({ color: 0xf6f9fc, emissive: 0x3a4048 })
+                         : new THREE.MeshLambertMaterial({ color: 0x5c4128, emissive: 0x120c06 });
+  const moundGeo = new THREE.SphereGeometry(1, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);   // 半球（地面から上だけ）
+  const rph = rand(0, 6);
+  for (let i = 0; i < 34; i++) {
+    if (Math.random() < 0.22) continue;                   // ところどころ切れている（きれいな輪にしない）
+    const th = (i / 34) * Math.PI * 2 + rand(-0.15, 0.15);
+    const r = 17 * (1 + 0.22 * Math.sin(th * 3 + rph) + rand(-0.2, 0.25)) * (1 + 0.4 * Math.max(0, Math.cos(th)));   // 前のほうは遠くまで押しやられる
+    const n = Math.random() < 0.4 ? 2 : 1;                // 2つ重なって、大きな吹きだまりになるところも
+    for (let k = 0; k < n; k++) {
+      const m = new THREE.Mesh(moundGeo, moundMat);
+      const rr = r + rand(-2.5, 3.5);
+      m.position.set(Math.sin(th) * rr * 0.9 + rand(-1.5, 1.5), 0, -Math.cos(th) * rr - 3 + rand(-1.5, 1.5));
+      m.rotation.y = -th + rand(-0.7, 0.7);
+      m.scale.set(rand(1.8, 6), rand(0.5, 2.4) * (snowy ? 1.2 : 0.9), rand(1.2, 3.2));
+      g.add(m);
+    }
+  }
+  for (let i = 0; i < (bomb ? 8 : 14); i++) {                          // ふちの外に飛ばされた、小さな雪（土）のかたまり
+    const sp = spot(24, 48);
+    const m = new THREE.Mesh(moundGeo, moundMat);
+    m.position.set(sp.x, 0, sp.z);
+    m.rotation.y = rand(0, 6);
+    m.scale.set(rand(0.8, 2), rand(0.4, 1.1), rand(0.8, 1.8));
+    g.add(m);
+  }
+  // ⑥ さらに外：バラバラに散らばった黒いススのドット
+  for (let i = 0; i < (bomb ? 24 : 44); i++) {             // 爆弾は何発も落とせるので、部品を少なめにして重くならないように
+    const sp = spot(12, 58), r = rand(0.5, 2.6);
+    flat(jagDisc(r, 0.35, 1, rand(0.6, 1.6), 12), pick([0x0a0a0a, 0x161310, 0x221c16]), rand(0.6, 0.92), sp.x, sp.z, 0.5 + Math.random() * 0.03, sp.th);
+  }
+  // ⑦ 機体の小さな破片（黒こげの金属片が、なかば地面にささっている）
+  const shardMats = [new THREE.MeshLambertMaterial({ color: 0x2a2a2c }), new THREE.MeshLambertMaterial({ color: 0x55585e }), new THREE.MeshLambertMaterial({ color: 0x141414 })];
+  for (let i = 0; i < (bomb ? 18 : 34); i++) {
+    const sp = spot(6, 52), sz = rand(0.4, 1.5);
+    const m = new THREE.Mesh(Math.random() < 0.5 ? new THREE.TetrahedronGeometry(sz) : new THREE.BoxGeometry(sz * rand(1, 2.5), sz * 0.25, sz * rand(0.5, 1.2)), pick(shardMats));
+    m.position.set(sp.x, sz * 0.2, sp.z);
+    m.rotation.set(rand(-0.8, 0.8), rand(0, 6), rand(-0.8, 0.8));
+    g.add(m);
+  }
+  // ⑧ クレーターの底で、しばらくくすぶる赤い残り火（だんだん消えて、黒い焦げ跡だけが残る）
+  for (let i = 0; i < (bomb ? 4 : 6); i++) {
+    const e = new THREE.Mesh(jagDisc(rand(1.2, 2.8) * (bomb ? 0.7 : 1), 0.4, 1, rand(0.6, 1.4), 12), new THREE.MeshBasicMaterial({ color: pick([0xff4a10, 0xff6a20, 0xd8300a]), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const lx = rand(-6, 6) * sx, lz = rand(-10, 4) * sz;
+    e.position.set(base.x + Math.cos(yaw) * lx + Math.sin(yaw) * lz, gy + 0.6, base.z - Math.sin(yaw) * lx + Math.cos(yaw) * lz);
+    e.rotation.set(-Math.PI / 2, 0, rand(0, 6));
+    e.renderOrder = 60;
+    scene.add(e);
+    fxParticles.push({ mesh: e, vel: new THREE.Vector3(), age: -rand(0.3, 1), life: rand(8, 12), op: rand(0.6, 0.9), gravity: 0, grow: 0, size: 1 });
+  }
+  return g;
 }
 
 let crashView = null;   // 墜落・激突を映すカメラ（爆発が画面の半分くらいになる距離）
@@ -4679,35 +4832,39 @@ function crashFx(kind, pos) {
     playBigBoom(0, 1.8); playBigBoom(0.22, 1.1); playBigBoom(0.55, 0.7);
     tone(32, 0.05, 2.4, 'sawtooth', 0.18, 22);                       // ゴゴゴゴ…
     duckAll(0.1, 3);
-    if (levelKey === 'medium' && snowCover > 0.08) snowFieldCrash(p0, g0);   // 中級：雪原への墜落
+    const snowy = levelKey === 'medium' && snowCover > 0.08;
+    if (snowy) snowFieldCrash(p0, g0);                               // 中級：雪原への墜落
     else crashOrangeLight(p0, 0.7);
+    if (levelKey !== 'hard' && g0 < 3) makeCrashScar(p0, plane.yaw, snowy);   // 平らな地面に、えぐれて飛び散った墜落の跡（山の斜面では出さない）
   } else if (kind === 'sea') {
     const sea = Math.max(0.3, waveHeight(pos.x, pos.z));
     const p0 = new THREE.Vector3(pos.x, sea, pos.z);
-    // ドォン！ … オレンジの爆炎と、巨大な白い水しぶきが同時に
+    // ① 衝撃と閃光（0.0〜0.2秒）：激突と同時に白い水柱が上がり、オレンジ色の巨大な火球が一瞬だけ広がる
     playWaterEntry(0, 1.4); playBigBoom(0, 1.5); tone(42, 0, 1.6, 'sine', 0.9, 24);
     playBigSplashSound(0.05, 1.8);
-    for (let i = 0; i < 24; i++) {                                   // 一瞬だけの、激しいオレンジの爆炎
-      const v = new THREE.Vector3(rand(-1, 1), rand(0.3, 1.4), rand(-1, 1)).normalize().multiplyScalar(rand(10, 26));
-      spawnFxParticle(p0.clone().add(new THREE.Vector3(0, 2, 0)), v, pick([0xff6a00, 0xff8c00, 0xffb020]), 1, rand(0.35, 0.6), true, -2, 3, rand(3, 5), true);
+    spawnFxParticle(p0.clone().add(new THREE.Vector3(0, 4, 0)), new THREE.Vector3(), 0xfff2d0, 1, 0.2, true, 0, 9, 5, true);   // まぶしい閃光
+    for (let i = 0; i < 36; i++) {                                   // 一瞬で広がって消える、巨大な火球
+      const a = Math.random() * Math.PI * 2, e = rand(0, 1.2);
+      const v = new THREE.Vector3(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e)).multiplyScalar(rand(24, 48));
+      spawnFxParticle(p0.clone().add(new THREE.Vector3(0, 3, 0)), v, pick([0xff5a00, 0xff7a00, 0xffa000, 0xffc640]), 1, rand(0.18, 0.3), true, 0, 4, rand(4, 7), true);
     }
-    makeExplosion(p0.clone().add(new THREE.Vector3(0, 3, 0)), 18, 0.5);
-    bigSplash(p0, 2.0);                                              // 巨大な水柱
+    makeExplosion(p0.clone().add(new THREE.Vector3(0, 4, 0)), 22, 0.25);
+    bigSplash(p0, 2.0);                                              // 白い水柱
     for (let i = 0; i < 60; i++) {                                   // 上空へ吹き上がる白い水しぶき
       spawnFxParticle(p0.clone(), new THREE.Vector3(rand(-12, 12), rand(30, 70), rand(-12, 12)), 0xffffff, 0.95, rand(1.6, 2.6), false, 28, 0.6, rand(1.2, 2.4), true);
     }
     flingPieces(p0.clone().add(new THREE.Vector3(0, 2, 0)), 14, { small: true, min: 0.3, max: 1.0, up0: 10, up1: 30 });
-    // 直後：海水で炎が消され、白い水蒸気と黒煙と油膜が広がる
-    later(0.35, () => {
-      for (let i = 0; i < 26; i++) spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-8, 8), 1, rand(-8, 8))),
-        new THREE.Vector3(rand(-3, 3), rand(3, 9), rand(-3, 3)), pick([0xf4f8fc, 0xe6edf3]), 0.55, rand(3, 4.5), false, -0.6, 5, rand(4, 6), true);   // 白い水蒸気
-      noiseBurst(0, 2.5, 0.3, 'highpass', 6000, 2500, 0.1);           // ジュワーッ（炎が消える音）
+    // ② 消火と黒煙（0.3〜1.0秒）：海水で炎は一気に消えるが、燃えきらなかった燃料の濃い黒煙と、
+    //    熱された海水の白い水蒸気が、まざり合いながらブワッとわき上がる
+    later(0.3, () => noiseBurst(0, 2.5, 0.35, 'highpass', 6000, 2500, 0.05));   // ジュワーッ（炎が消える音）
+    for (let k = 0; k <= 14; k++) later(0.3 + k * 0.05, () => {
+      for (let i = 0; i < 2; i++) spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-7, 7), rand(1, 4), rand(-7, 7))),
+        new THREE.Vector3(rand(-4, 4) + windX, rand(12, 24), rand(-4, 4)), pick([0x0c0c0c, 0x171717, 0x221e1c]), 0.92, rand(3.5, 5.5), false, -1.2, 5.5, rand(4, 6), true);   // 濃い黒煙
+      for (let i = 0; i < 2; i++) spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-8, 8), rand(1, 3), rand(-8, 8))),
+        new THREE.Vector3(rand(-5, 5) + windX, rand(9, 20), rand(-5, 5)), pick([0xffffff, 0xeef3f7, 0xdfe6ec]), 0.6, rand(2.8, 4.2), false, -0.8, 6, rand(4, 6.5), true);   // 白い水蒸気
     });
-    heavySmoke(p0.clone().add(new THREE.Vector3(0, 2, 0)), 1.0, 30);   // 大量の黒煙
-    const oil = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: 0x14100c, transparent: true, opacity: 0.6, depthWrite: false }));
-    oil.rotation.x = -Math.PI / 2; oil.position.set(p0.x, sea + 0.25, p0.z); oil.renderOrder = 3;
-    scene.add(oil);
-    fxParticles.push({ mesh: oil, vel: new THREE.Vector3(), age: 0, life: 9, op: 0.6, gravity: 0, grow: 30, size: 2 });   // 油膜がじわじわ広がる
+    // ③ 海面の油膜：残った燃料がうすく広がり、ゆらゆらしながら、焦げあとと黒い煙を出しつづける
+    makeOilSlick(p0, sea);
     for (let k = 0; k < 4; k++) {                                    // 海面に広がる波紋
       const ring = new THREE.Mesh(new THREE.RingGeometry(2, 3.2, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }));
       ring.rotation.x = -Math.PI / 2; ring.position.set(p0.x, sea + 0.4, p0.z);
@@ -4738,6 +4895,53 @@ function crashFx(kind, pos) {
     duckAll(0.1, 3.4);
   }
 }
+// 上級：海に墜落したあとの油膜（ふちがでこぼこの黒い膜。ゆらゆら広がり、焦げあとと黒い煙を出しつづける）
+let oilSlicks = [];
+function makeOilSlick(p0, sea) {
+  const g = new THREE.Group();
+  g.position.set(p0.x, sea + 0.25, p0.z);
+  const jag = (geo, amp, ph) => { const pa = geo.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i), a = Math.atan2(y, x), k = 1 + amp * Math.sin(a * 4 + ph) + amp * 0.6 * Math.sin(a * 9 + ph * 2); pa.setX(i, x * k); pa.setY(i, y * k); } return geo; };
+  const ph = rand(0, 6);
+  const film = new THREE.Mesh(jag(new THREE.CircleGeometry(1, 48), 0.18, ph), new THREE.MeshBasicMaterial({ color: 0x15110d, transparent: true, opacity: 0.62, depthWrite: false }));
+  film.rotation.x = -Math.PI / 2;
+  g.add(film);
+  const sheen = new THREE.Mesh(jag(new THREE.RingGeometry(0.55, 0.95, 48), 0.15, ph + 1), new THREE.MeshBasicMaterial({ color: 0x5a6a8a, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sheen.rotation.x = -Math.PI / 2; sheen.position.y = 0.02;            // 油の、にじんだ虹色っぽいかがやき
+  g.add(sheen);
+  for (let i = 0; i < 9; i++) {                                       // 焦げあと（こい黒のしみ）
+    const a = Math.random() * Math.PI * 2, d = rand(0, 0.7);
+    const sp = new THREE.Mesh(jag(new THREE.CircleGeometry(rand(0.08, 0.2), 12), 0.3, rand(0, 6)), new THREE.MeshBasicMaterial({ color: 0x050403, transparent: true, opacity: 0.85, depthWrite: false }));
+    sp.rotation.x = -Math.PI / 2; sp.position.set(Math.cos(a) * d, 0.03, Math.sin(a) * d);
+    g.add(sp);
+  }
+  g.renderOrder = 3;
+  g.scale.setScalar(3);
+  scene.add(g);
+  oilSlicks.push({ g: g, film: film, sheen: sheen, age: 0, life: 14, max: rand(34, 42), smoke: 0, ph: ph });
+}
+function updateOilSlicks(dt) {
+  for (let i = oilSlicks.length - 1; i >= 0; i--) {
+    const o = oilSlicks[i];
+    o.age += dt;
+    const grow = 1 - Math.exp(-o.age / 2.2);                          // はじめは速く、だんだんゆっくり広がる
+    const r = 3 + (o.max - 3) * grow;
+    o.g.scale.set(r * (1 + 0.05 * Math.sin(o.age * 1.3 + o.ph)), 1, r * (1 + 0.05 * Math.cos(o.age * 1.1 + o.ph)));   // ゆらゆら
+    o.g.rotation.y += dt * 0.04;
+    o.g.position.y = Math.max(0.3, waveHeight(o.g.position.x, o.g.position.z)) + 0.25;   // 波といっしょに上下する
+    const fade = Math.min(1, Math.max(0, (o.life - o.age) / 3));
+    o.film.material.opacity = 0.62 * fade;
+    o.sheen.material.opacity = (0.16 + 0.08 * Math.sin(o.age * 2 + o.ph)) * fade;
+    o.smoke -= dt;
+    if (o.smoke <= 0 && o.age < o.life - 2) {                         // 油膜のあちこちから、黒い煙が立ちのぼりつづける
+      o.smoke = 0.12;
+      const a = Math.random() * Math.PI * 2, d = rand(0, r * 0.7);
+      spawnFxParticle(o.g.position.clone().add(new THREE.Vector3(Math.cos(a) * d, 0.5, Math.sin(a) * d)),
+        new THREE.Vector3(rand(-1, 1) + windX, rand(4, 9), rand(-1, 1)), pick([0x121212, 0x1c1a18]), 0.7, rand(3, 4.5), false, -0.8, 4.5, rand(2.5, 4), true);
+    }
+    if (o.age >= o.life) { scene.remove(o.g); oilSlicks.splice(i, 1); }
+  }
+}
+
 // ギギギ…と金属がひき裂かれる、重い音
 function playMetalTearSound() {
   if (!sound.ctx) return;
@@ -5861,16 +6065,20 @@ function updateBombs(dt) {
       bombs.splice(i, 1);
     }
   }
+  updateBlownParts(dt);
   // 破壊したあとは、しばらく燃えてけむりが上がる
   wrecks.forEach(w => {
     w.t -= dt;
     w.spawn -= dt;
     if (w.t > 0 && w.spawn <= 0) {
-      w.spawn = 0.08;
+      w.spawn = w.heavy ? 0.06 : 0.08;
       if (!w.sea) spawnFxParticle(w.pos.clone().add(new THREE.Vector3(rand(-6, 6), 1, rand(-6, 6))),
         new THREE.Vector3(rand(-1, 1), rand(3, 6), rand(-1, 1)), 0xff6a00, 0.8, rand(0.4, 0.8), true, -1, 1.5);
-      spawnFxParticle(w.pos.clone().add(new THREE.Vector3(rand(-5, 5), 2, rand(-5, 5))),
-        new THREE.Vector3(rand(-1, 1) + windX, rand(4, 8), rand(-1, 1)), w.sea ? 0xe0e0e0 : 0x424242, 0.55, rand(1.5, 2.5), false, -0.5, 4);
+      if (w.heavy) {                                             // 戦車：焼けこげた車体から、太くて真っ黒な煙が長く立ちのぼる
+        spawnFxParticle(w.pos.clone().add(new THREE.Vector3(rand(-3, 3), 4, rand(-3, 3))),
+          new THREE.Vector3(rand(-1, 1) + windX, rand(7, 12), rand(-1, 1)), pick([0x0c0c0c, 0x161616, 0x1f1c1a]), 0.8, rand(3, 4.5), false, -0.6, 5, rand(2.5, 3.5));
+      } else spawnFxParticle(w.pos.clone().add(new THREE.Vector3(rand(-5, 5), 2, rand(-5, 5))),
+        new THREE.Vector3(rand(-1, 1) + windX, rand(4, 8), rand(-1, 1)), w.sea ? 0xe0e0e0 : w.light ? 0x5a5a5a : 0x424242, w.light ? 0.45 : 0.55, rand(1.5, 2.5), false, -0.5, 4);
     }
   });
   wrecks = wrecks.filter(w => w.t > 0);
@@ -6057,18 +6265,159 @@ function bombImpact(pos, bomb) {
     makeExplosion(pos.clone().add(new THREE.Vector3(0, 2, 0)), 11, 0.8);
     makeExplosion(pos.clone().add(new THREE.Vector3(rand(-4, 4), 1, rand(-4, 4))), 7, 0.6);
     bigDirtBlast(pos, 1);                                  // 飛び散る土・もくもくの土けむり・衝撃波
-    const scorch = new THREE.Mesh(new THREE.CircleGeometry(11, 20), new THREE.MeshBasicMaterial({
-      color: 0x111111, transparent: true, opacity: 0.85, depthWrite: false }));   // 黒こげのあと（コースに残る）
-    scorch.rotation.x = -Math.PI / 2;
-    scorch.rotation.z = rand(0, Math.PI);
-    scorch.scale.set(1, rand(0.7, 1), 1);
-    scorch.position.set(pos.x, pos.y + 0.45, pos.z);
-    courseGroup.add(scorch);
+    if (levelKey !== 'hard') {
+      // 練習・初級・中級：墜落の跡と同じく「えぐれて飛び散った」爆弾の跡（中級の雪の上なら、白い雪に黒い焦げ跡）
+      const bv = bomb && bomb.userData && bomb.userData.vel;
+      const yaw = bv && Math.hypot(bv.x, bv.z) > 0.5 ? Math.atan2(-bv.x, -bv.z) : plane.yaw;   // 爆弾が飛んできた向き
+      makeCrashScar(pos, yaw, levelKey === 'medium' && snowCover > 0.08, true);
+    } else {
+      const scorch = new THREE.Mesh(new THREE.CircleGeometry(11, 20), new THREE.MeshBasicMaterial({
+        color: 0x111111, transparent: true, opacity: 0.85, depthWrite: false }));   // 上級（橋・空母の上）：黒こげのあと
+      scorch.rotation.x = -Math.PI / 2;
+      scorch.rotation.z = rand(0, Math.PI);
+      scorch.scale.set(1, rand(0.7, 1), 1);
+      scorch.position.set(pos.x, pos.y + 0.45, pos.z);
+      courseGroup.add(scorch);
+    }
     // ズドォォン……ゴゴゴゴ（地ひびき）
     playBigBoom(0, 1);                                     // ズガァァン！ゴゴゴ…（地ひびき）
     tone(38, 0.1, 2.0, 'sawtooth', 0.12 * CONFIG.BOMB_SOUND_VOLUME, 25);
     duckAll(0.2, 2.0);
     cameraShake = Math.max(cameraShake, 1.4);              // 地面が大きくゆれる
+  }
+}
+
+// =====================================================================
+// 練習・初級・中級：爆弾で壊したパトリオット・戦車を「壊れた姿」にする
+//   ・戦車（重い装甲）：砲塔が吹き飛び、車体はかたむいて黒こげのスクラップに。弾薬に引火して炎がふき出し、黒煙が長く残る（重厚な大破）
+//   ・パトリオット（軽い機材）：発射機の筒・レーダーのパネルがバラバラに吹き飛び、照明塔がたおれる。残っていたミサイルが誘爆してピカッ！ピカッ！（軽快な破壊）
+// =====================================================================
+let blownParts = [];   // 吹き飛んで、地面に落ちるまで動く部品
+function charObject(obj, k) {                                    // 黒こげにする（光る部品は消す）
+  obj.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.material && o.material.isMeshBasicMaterial) { o.visible = false; return; }   // 回転灯・照明・陣地の明かり
+    if (o.material && o.material.color) {
+      o.material = o.material.clone();                         // ほかの戦車・陣地と共有しているかもしれないので、コピーしてから変える
+      o.material.color.lerp(new THREE.Color(pick([0x141210, 0x1d1a16, 0x24201b])), k);
+      if (o.material.emissive) o.material.emissive.setHex(0x000000);
+    }
+  });
+  (obj.userData.beacons || []).forEach(b => { b.visible = false; });
+}
+// 部品を吹き飛ばす（地面に落ちたら、かたむいたまま残る）
+function blowOff(part, vel, spin, groundY, fire) {
+  courseGroup.attach(part);                                     // 見た目の位置はそのままで、本体から切りはなす
+  blownParts.push({ obj: part, vel: vel, spin: spin, groundY: groundY, fire: !!fire, bounced: false, trailT: 0 });
+}
+function updateBlownParts(dt) {
+  for (let i = blownParts.length - 1; i >= 0; i--) {
+    const b = blownParts[i];
+    b.vel.y -= 30 * dt;
+    b.obj.position.addScaledVector(b.vel, dt);
+    b.obj.rotation.x += b.spin.x * dt; b.obj.rotation.y += b.spin.y * dt; b.obj.rotation.z += b.spin.z * dt;
+    b.trailT -= dt;
+    if (b.trailT <= 0) {                                         // 飛んでいるあいだ、煙（炎）の尾を引く
+      b.trailT = 0.05;
+      spawnFxParticle(b.obj.position.clone(), new THREE.Vector3(rand(-1, 1), rand(0, 2), rand(-1, 1)),
+        b.fire ? pick([0xff6a00, 0xff9a20]) : pick([0x1a1a1a, 0x2a2a2a]), b.fire ? 0.9 : 0.7, rand(0.5, 0.9), b.fire, -1, 2.5, rand(0.8, 1.4), true);
+    }
+    const bb = new THREE.Box3().setFromObject(b.obj);
+    if (bb.min.y <= b.groundY && b.vel.y < 0) {
+      b.obj.position.y += b.groundY - bb.min.y;
+      if (!b.bounced && b.vel.y < -10) {                         // ドスン！と1回はねてから止まる
+        b.bounced = true;
+        b.vel.set(b.vel.x * 0.4, -b.vel.y * 0.3, b.vel.z * 0.4);
+        b.spin.multiplyScalar(0.35);
+        sparks(b.obj.position.clone(), 8, 0.5, true);
+        spawnFxParticle(b.obj.position.clone(), new THREE.Vector3(0, 3, 0), 0x8a7a68, 0.6, 1.2, false, 0, 3, 2.5, true);   // 土けむり
+      } else {
+        blownParts.splice(i, 1);                                 // 止まった（そのまま残骸として残る）
+      }
+    }
+  }
+}
+// 残っていたミサイル・弾薬が誘爆する「ピカッ！」（白〜黄色の閃光＋火花）
+function cookOffFlash(p, s) {
+  spawnFxParticle(p.clone(), new THREE.Vector3(), 0xffffff, 1, 0.14, true, 0, 6, 3.5 * s, true);
+  spawnFxParticle(p.clone(), new THREE.Vector3(), 0xfff0a0, 0.9, 0.25, true, 0, 4, 4.5 * s, true);
+  sparks(p.clone(), Math.round(14 * s), 0.7 * s, false);
+  makeExplosion(p.clone(), 6 * s, 0.4);
+  noiseBurst(0, 0.12, 0.35 * CONFIG.BOMB_SOUND_VOLUME, 'highpass', 3000, 1200, 0.002);   // パンッ
+  tone(110, 0, 0.3, 'square', 0.08 * CONFIG.BOMB_SOUND_VOLUME, 40);
+}
+function wreckSite(site, type) {
+  const pos = site.position.clone();
+  const g0 = pos.y;
+  const up = new THREE.Vector3(0, 1, 0);
+  // ヒットの瞬間：まぶしい白い閃光（着弾カメラにもはっきり映る）
+  spawnFxParticle(pos.clone().add(new THREE.Vector3(0, 6, 0)), new THREE.Vector3(), 0xffffff, 1, 0.18, true, 0, 7, 6, true);
+  flingPieces(pos.clone().add(new THREE.Vector3(0, 3, 0)), 14, { small: true, min: 0.25, max: 0.8, up0: 10, up1: 30, speed: 24 });   // 小さな黒い破片が放射状に
+  sparks(pos.clone().add(new THREE.Vector3(0, 3, 0)), 26, 0.9, false);
+  if (type === 'tank') {
+    // ---- 戦車：重厚な大破 ----
+    fireball(pos.clone().add(new THREE.Vector3(0, 4, 0)), 0.75);   // 少し大きめの爆発
+    heavySmoke(pos.clone().add(new THREE.Vector3(0, 3, 0)), 0.8, 22);
+    const tur = site.userData.turret;
+    if (tur) {                                                   // 砲塔が吹き飛ぶ（ハッチも開く）
+      charObject(tur, 0.82);
+      const a = Math.random() * Math.PI * 2;
+      blowOff(tur, new THREE.Vector3(Math.cos(a) * rand(3, 7), rand(20, 28), Math.sin(a) * rand(3, 7)),
+        new THREE.Vector3(rand(-2.5, 2.5), rand(-4, 4), rand(-2.5, 2.5)), g0, true);
+    }
+    charObject(site, 0.85);                                      // 焼けこげた車体
+    site.rotation.z += rand(0.1, 0.18) * (Math.random() < 0.5 ? -1 : 1);   // 車体がかたむく
+    site.rotation.x += rand(-0.08, 0.08);
+    site.position.y -= 0.5;
+    // 弾薬・燃料に引火：砲塔のあった穴から、激しい炎が何度もふき出す
+    for (let k = 0; k < 7; k++) later(0.35 + k * 0.28 + rand(0, 0.1), () => {
+      const top = pos.clone().add(new THREE.Vector3(rand(-1, 1), 5, rand(-1, 1)));
+      for (let i = 0; i < 10; i++) spawnFxParticle(top.clone(), new THREE.Vector3(rand(-2.5, 2.5), rand(14, 26), rand(-2.5, 2.5)),
+        pick([0xff5a00, 0xff8a00, 0xffc040]), 1, rand(0.45, 0.8), true, -2, 2.5, rand(1.6, 2.8), true);
+      if (k % 2 === 0) playBigBoom(0, 0.35);
+    });
+    crashFires.push({ pos: pos.clone().add(new THREE.Vector3(0, 3, 0)), t: 6, spawn: 0 });   // しばらく燃えつづける
+  } else {
+    // ---- パトリオット：軽快な破壊 ＋ 誘爆の閃光 ----
+    makeExplosion(pos.clone().add(new THREE.Vector3(0, 4, 0)), 12, 0.6);
+    site.updateMatrixWorld(true);
+    const parts = [];
+    site.traverse(o => { if (o.isGroup && o !== site) parts.push(o); });
+    // 発射機のラック（4本の筒）：筒を1本ずつバラバラに吹き飛ばす
+    const rack = site.userData.muzzleObj && site.userData.muzzleObj.parent;
+    if (rack) {
+      const kids = rack.children.filter(c => c.isMesh);
+      charObject(rack, 0.6);
+      kids.forEach((c, i) => {
+        const a = Math.random() * Math.PI * 2;
+        blowOff(c, new THREE.Vector3(Math.cos(a) * rand(8, 20), rand(16, 32), Math.sin(a) * rand(8, 20)),
+          new THREE.Vector3(rand(-6, 6), rand(-6, 6), rand(-6, 6)), g0, i < 3);
+      });
+    }
+    // レーダーのパネルも吹き飛ぶ。レーダー車はかたむく
+    parts.forEach(gr => {
+      if (gr === rack) return;
+      const panel = gr.children.find(c => c.isGroup);
+      if (panel) {
+        charObject(panel, 0.6);
+        blowOff(panel, new THREE.Vector3(rand(-8, 8), rand(14, 24), rand(-8, 8)), new THREE.Vector3(rand(-4, 4), rand(-3, 3), rand(-4, 4)), g0, false);
+        gr.rotation.z += rand(0.12, 0.25);
+      }
+    });
+    charObject(site, 0.7);
+    // 照明塔がバタンとたおれる
+    site.children.forEach(c => {
+      if (c.isMesh && c.geometry && c.geometry.type === 'CylinderGeometry' && c.position.y > 4) {
+        c.rotation.z = Math.PI / 2 * 0.9; c.position.y = 0.6; c.position.x -= 5.5;
+      }
+    });
+    // 残っていたミサイルが誘爆：ピカッ！ピカッ！と何度も閃光が走り、火花が飛ぶ
+    const rk = pos.clone().add(new THREE.Vector3(0, 6, 0));
+    for (let k = 0; k < 5; k++) later(0.15 + k * 0.22 + rand(0, 0.12), () => cookOffFlash(rk.clone().add(new THREE.Vector3(rand(-6, 6), rand(-2, 4), rand(-6, 6))), rand(0.8, 1.3)));
+    for (let k = 0; k < 2; k++) later(0.3 + k * 0.4, () => {      // 誘爆したミサイルが、火を引いてあちこちへ飛び出す
+      const v = new THREE.Vector3(rand(-1, 1), rand(0.3, 1), rand(-1, 1)).normalize().multiplyScalar(rand(40, 60));
+      for (let i = 0; i < 12; i++) spawnFxParticle(rk.clone().addScaledVector(v, i * 0.012), v.clone().multiplyScalar(0.9 + i * 0.01), pick([0xffe080, 0xffb040]), 1, rand(0.4, 0.7), true, 10, 0.5, rand(0.5, 0.9), true);
+    });
   }
 }
 
@@ -6115,14 +6464,19 @@ function destroySite(site) {
   samPending = samPending.filter(w => { if (w.site === site) { scene.remove(w.ring); return false; } return true; });
   samSites = samSites.filter(st => st !== site);
   tankSites = tankSites.filter(st => st !== site);
-  site.parent.remove(site);
+  const wreckKind = levelKey !== 'hard' && (kind === 'tank' || !kind) ? (kind === 'tank' ? 'tank' : 'patriot') : null;
+  if (wreckKind) wreckSite(site, wreckKind);                     // 練習・初級・中級：消さずに「壊れた姿」に変える
+  else site.parent.remove(site);
   // 地上は黒こげのあと、海は白いあわ。しばらく燃えてけむりが上がる
-  const scorch = new THREE.Mesh(new THREE.CircleGeometry(sea ? 20 : 26, 24), new THREE.MeshBasicMaterial({
-    color: sea ? 0xe8f4ff : 0x111111, transparent: true, opacity: sea ? 0.5 : 0.85, depthWrite: false }));
-  scorch.rotation.x = -Math.PI / 2;
-  scorch.position.set(pos.x, pos.y + (sea ? 0.35 : 0.5), pos.z);
-  courseGroup.add(scorch);
-  wrecks.push({ pos: pos, t: 8, spawn: 0, sea: sea });
+  if (levelKey !== 'hard') makeCrashScar(pos, plane.yaw, levelKey === 'medium' && snowCover > 0.08, true);   // 練習・初級・中級：えぐれて飛び散った跡
+  else {
+    const scorch = new THREE.Mesh(new THREE.CircleGeometry(sea ? 20 : 26, 24), new THREE.MeshBasicMaterial({
+      color: sea ? 0xe8f4ff : 0x111111, transparent: true, opacity: sea ? 0.5 : 0.85, depthWrite: false }));
+    scorch.rotation.x = -Math.PI / 2;
+    scorch.position.set(pos.x, pos.y + (sea ? 0.35 : 0.5), pos.z);
+    courseGroup.add(scorch);
+  }
+  wrecks.push({ pos: pos, t: wreckKind === 'tank' ? 22 : wreckKind === 'patriot' ? 10 : 8, spawn: 0, sea: sea, heavy: wreckKind === 'tank', light: wreckKind === 'patriot' });
   // ボーナス
   bombKills++;
   bonus += CONFIG.BOMB_BONUS;
@@ -6565,7 +6919,8 @@ function destroyBridge(br, hitPos, crashed) {   // crashed = 自機が激突し�
   const bz = br.position.z, Y = CONFIG.BRIDGE_DECK_Y, L = br.userData.len;
   br.userData.deck.visible = false;
   // 橋の上の戦車・パトリオットも、いっしょに落ちる
-  const onIt = st => st.userData.onBridge === br;
+  const BREAK_R = 150;                                                // 自機が激突したとき：こわれた区間（とその近く）の上のものだけ落ちる
+  const onIt = st => st.userData.onBridge === br && (!crashed || Math.abs(st.position.x - hitPos.x) < BREAK_R);
   samSites.concat(tankSites).filter(onIt).forEach(st => {
     samPending = samPending.filter(w => { if (w.site === st) { scene.remove(w.ring); return false; } return true; });
     // 撃つのをやめて、橋のかけらといっしょに海へ落ちていく（かたむきながら）
@@ -6577,6 +6932,7 @@ function destroyBridge(br, hitPos, crashed) {   // crashed = 自機が激突し�
   tankSites = tankSites.filter(st => !onIt(st));
   structures = structures.filter(st => st.bridge !== br || st.tower);   // 塔は残る
   platforms = platforms.filter(pf => pf.bridge !== br);
+  if (crashed) return partialBridgeCollapse(br, hitPos);             // 自機が激突：橋の一部だけが欠けて、かたむきながら崩れ落ちる
   // くずれ落ちる道路のかけら
   const segW = 40;
   const chunk = makeBridgeChunk(segW, br.userData.lit);             // 元の橋と同じデザインのかけら
@@ -6606,7 +6962,149 @@ function destroyBridge(br, hitPos, crashed) {   // crashed = 自機が激突し�
   bonus += CONFIG.BRIDGE_BONUS;
   showPopup('🌉 橋を破壊！ −' + CONFIG.BRIDGE_BONUS + '秒', '#ffeb3b');
 }
+// ---------------------------------------------------------------------
+// 上級：戦闘機が橋に激突したときの壊れ方（橋ぜんぶは消えない）
+//   ① 激突した区間：道路の板がぽっかり抜け落ちて、かけらが海へ落ちていく（煙の尾を引き、海面で水しぶきと煙）
+//   ② そのとなり：支えを失った道路が、ちぎれた端を下にしてグニャリと傾き、ぶら下がる。
+//      端はギザギザに欠け、曲がった鉄骨が飛び出し、黒い破片・火花・灰色の煙がポロポロと下へこぼれ落ちつづける
+//      （片がわは、しばらくしてから耐えきれずにちぎれて落ちることもある）
+//   ③ さらに外：少したわむだけ。それより外は、まっすぐなまま残る
+//   吊り橋のケーブルは残る
+// ---------------------------------------------------------------------
+let bridgeSags = [], bridgeDribbles = [];
+function partialBridgeCollapse(br, hitPos) {
+  const bz = br.position.z, Y = CONFIG.BRIDGE_DECK_Y, L = br.userData.len, deck = br.userData.deck;
+  deck.children.filter(c => c.isLineSegments).forEach(c => br.attach(c));   // ケーブルは残す
+  const segW = 40, hx = hitPos.x;
+  const chunk = makeBridgeChunk(segW, br.userData.lit);
+  const centers = [];
+  for (let x = -L / 2 + segW / 2; x < L / 2; x += segW) centers.push(x);
+  // 激突した場所に近い2つの区間が抜け落ちる
+  const order = centers.map((x, i) => ({ x: x, i: i, d: Math.abs(x - hx) })).sort((a, b) => a.d - b.d);
+  const gap = new Set([order[0].i, order[1].i]);
+  const gi = [...gap].sort((a, b) => a - b);
+  const leftEnd = gi[0] - 1, rightEnd = gi[1] + 1;                   // ぶら下がる区間（左・右）
+  const snapSide = Math.random() < 0.5 ? -1 : 1;                     // こちらがわは、しばらくしてからちぎれて落ちる
+  centers.forEach((x, i) => {
+    if (gap.has(i)) {                                                // ① 抜け落ちる区間
+      const piece = chunk.clone();
+      charChunk(piece, 0.55);
+      piece.position.set(x, Y - 3, bz);
+      scene.add(piece);
+      const k = Math.abs(x - hx) / segW;
+      debris.push({ mesh: piece, trail: true, trailT: 0, bridgeBit: true, vel: new THREE.Vector3(rand(-4, 4), rand(-2, 6), rand(-5, 5)),
+                    spin: new THREE.Vector3(rand(-0.8, 0.8), rand(-0.3, 0.3), (x < hx ? 1 : -1) * rand(0.6, 1.4)), delay: 0.05 + k * 0.25, life: 7, splashed: false });
+      return;
+    }
+    const side = i < gi[0] ? -1 : 1;                                 // 抜けた区間の左(-1)か右(+1)か
+    const dist = side < 0 ? leftEnd - i : i - rightEnd;              // ぶら下がる区間から何個はなれているか
+    const piece = chunk.clone();
+    if (dist > 1) {                                                  // ③ まっすぐ残る
+      piece.position.set(x, Y - 3, 0);
+      br.add(piece);
+      return;
+    }
+    // ② ぶら下がる（dist 0）／少したわむ（dist 1）：外がわの端をちょうつがいにして回す
+    const hinge = new THREE.Group();
+    hinge.position.set(x + side * segW / 2, Y - 3, 0);              // 外がわ（抜けた区間と反対）の端
+    piece.position.set(-side * segW / 2, 0, 0);
+    hinge.add(piece);
+    br.add(hinge);
+    if (dist === 0) {
+      charChunk(piece, 0.45);
+      raggedEnd(piece, -side, segW);                                 // 抜けた区間がわの端を、ギザギザにちぎれた形に
+      bridgeDribbles.push({ piece: piece, endX: -side * (segW / 2 - 1), t: 9, spawn: 0 });
+    }
+    // 傾き：抜けた区間がわの端が下がる。左がわ(-1)は +X の端が下がる → マイナス回転
+    const target = side * (dist === 0 ? rand(0.24, 0.32) : rand(0.04, 0.07));
+    bridgeSags.push({ hinge: hinge, ang: 0, vel: 0, target: target, delay: dist === 0 ? 0.12 : 0.35, snap: dist === 0 && side === snapSide ? rand(3.2, 5) : 0, piece: piece });
+  });
+  // 当たった場所のまわりだけ、爆発がつづく
+  for (let k = 0; k < 6; k++) {
+    const dx = (k % 2 ? 1 : -1) * Math.floor((k + 1) / 2) * 22;
+    bridgeBlasts.push({ t: 0.08 + Math.abs(dx) / 160, pos: new THREE.Vector3(hx + dx, Y + 2, bz + rand(-6, 6)), big: k < 2 });
+  }
+  directHitBlast(hitPos.clone().add(new THREE.Vector3(0, 3, 0)), 1.4);
+  flingPieces(hitPos.clone(), 16, { long: true, hot: true, min: 0.6, max: 1.6, up0: -4, up1: 10, speed: 14 });   // ちぎれた鉄骨
+  flingPieces(hitPos.clone(), 18, { small: true, min: 0.4, max: 1.2, up0: -2, up1: 12, speed: 16 });             // コンクリートのかたまり
+  playMetalTearSound();                                                // ギギギ…（鉄骨がちぎれる）
+  playBigBoom(0.1, 1.3); playBigBoom(0.45, 0.8);
+  tone(30, 0.2, 2.4, 'sawtooth', 0.14, 20);                           // ゴゴゴゴ…（くずれる音）
+  noiseBurst(0.3, 2.2, 0.35, 'lowpass', 900, 120, 0.2);
+  playBigSplashSound(1.4, 1.2);                                       // ザッバァァン！（かけらが海に落ちる）
+  duckAll(0.15, 3.0);
+  cameraShake = Math.max(cameraShake, 1.3);
+}
+// 焼けこげ（かけらのコピーだけ色を変える）
+function charChunk(obj, k) {
+  obj.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    if (o.material.isMeshBasicMaterial) { if (Math.random() < 0.6) o.visible = false; return; }   // 道路の光・電灯がところどころ消える
+    if (o.material.color) { o.material = o.material.clone(); o.material.color.lerp(new THREE.Color(0x1a1816), k * rand(0.6, 1)); }
+  });
+}
+// ちぎれた端：長さのそろわないコンクリートの板と、曲がって飛び出した鉄骨
+function raggedEnd(piece, dir, segW) {
+  const ex = dir * (segW / 2 - 0.5);
+  for (let i = 0; i < 7; i++) {                                      // ギザギザに欠けたコンクリート
+    const len = rand(1, 5.5), z = -11 + i * 3.6 + rand(-1, 1);
+    const b = box(len, rand(2.5, 6), rand(2.5, 4.2), pick([0x6f747a, 0x5a5e63, 0x2a2826]), ex + dir * len / 2, rand(-1.5, 0.5), z);
+    b.rotation.set(rand(-0.25, 0.25), rand(-0.3, 0.3), rand(-0.35, 0.35));
+    piece.add(b);
+  }
+  const steel = mat(0x3c3f44);
+  for (let i = 0; i < 9; i++) {                                      // 曲がった鉄骨・鉄筋
+    const len = rand(3, 9);
+    const r = new THREE.Mesh(new THREE.BoxGeometry(len, rand(0.25, 0.5), rand(0.25, 0.5)), steel);
+    r.position.set(ex + dir * len * 0.4, rand(-2, 9), rand(-13.5, 13.5));
+    r.rotation.set(rand(-0.6, 0.6), rand(-0.5, 0.5), dir * rand(-1.1, 0.2));   // 下向きにグニャリ
+    piece.add(r);
+  }
+  const burn = box(10, 0.15, 22, 0x0e0d0c, ex - dir * 5, 3.4, 0);   // 端の路面の焦げ跡
+  piece.add(burn);
+}
+function updateBridgeCollapse(dt) {
+  for (let i = bridgeSags.length - 1; i >= 0; i--) {
+    const b = bridgeSags[i];
+    if (b.delay > 0) { b.delay -= dt; continue; }
+    // バネのように「ガクン」と傾いて、少しゆれてから止まる
+    b.vel += ((b.target - b.ang) * 26 - b.vel * 3.2) * dt;
+    b.ang += b.vel * dt;
+    b.hinge.rotation.z = b.ang + (Math.abs(b.target) > 0.2 ? Math.sin(performance.now() * 0.02) * 0.004 : 0);
+    if (b.snap > 0) {
+      b.snap -= dt;
+      if (b.snap <= 0) {                                             // 耐えきれずにちぎれて、海へ落ちる
+        const p = b.piece;
+        scene.attach(p);
+        debris.push({ mesh: p, trail: true, trailT: 0, bridgeBit: true, vel: new THREE.Vector3(rand(-2, 2), -2, rand(-3, 3)),
+                      spin: new THREE.Vector3(rand(-0.4, 0.4), rand(-0.2, 0.2), Math.sign(b.target) * rand(0.6, 1.1)), delay: 0, life: 7, splashed: false });
+        playMetalTearSound();
+        sparks(p.position.clone(), 30, 0.7, false);
+        bridgeDribbles = bridgeDribbles.filter(d => d.piece !== p);
+        bridgeSags.splice(i, 1);
+      }
+    }
+  }
+  for (let i = bridgeDribbles.length - 1; i >= 0; i--) {
+    const d = bridgeDribbles[i];
+    d.t -= dt; d.spawn -= dt;
+    if (d.t <= 0) { bridgeDribbles.splice(i, 1); continue; }
+    if (d.spawn > 0) continue;
+    d.spawn = 0.1;
+    const at = d.piece.localToWorld(new THREE.Vector3(d.endX, rand(-3, 2), rand(-12, 12)));
+    // 黒い破片がポロポロとこぼれ落ちる
+    const m = new THREE.Mesh(shardGeo(Math.random() < 0.3), mat(pick([0x1c1c1c, 0x3a3a3a, 0x5a5e63])));
+    const sz = rand(0.3, 1.0); m.scale.set(sz, sz * 0.6, sz);
+    m.position.copy(at);
+    scene.add(m);
+    debris.push({ mesh: m, small: true, vel: new THREE.Vector3(rand(-2, 2), rand(-3, 1), rand(-2, 2)), spin: new THREE.Vector3(rand(-5, 5), rand(-5, 5), rand(-5, 5)), delay: 0, life: 6 });
+    if (Math.random() < 0.6) spawnFxParticle(at.clone(), new THREE.Vector3(rand(-2, 2), rand(-4, 0), rand(-2, 2)), pick([0xffd040, 0xffa020]), 1, rand(0.6, 1.0), true, 22, -0.5, rand(0.3, 0.5), true);   // こぼれる火花
+    spawnFxParticle(at.clone(), new THREE.Vector3(rand(-1, 1) + windX, rand(2, 5), rand(-1, 1)), pick([0x6a6a6a, 0x808080, 0x555555]), 0.5, rand(1.8, 2.8), false, -0.3, 3.5, rand(1.2, 2), true);   // 灰色の煙
+  }
+}
 function updateDebris(dt) {
+  updateOilSlicks(dt);
+  updateBridgeCollapse(dt);
   for (let i = crashLights.length - 1; i >= 0; i--) {               // 爆発の光が、だんだん消える
     const c = crashLights[i];
     c.t += dt;
@@ -6656,6 +7154,7 @@ function updateDebris(dt) {
       const gh = surfaceHeight(d.mesh.position.x, d.mesh.position.z, d.mesh.position.y + 2);
       if (d.mesh.position.y < gh) {
         spawnFxParticle(d.mesh.position.clone().setY(gh + 0.5), new THREE.Vector3(0, 2, 0), gh < 3 && levelKey === 'hard' ? 0xf0f6ff : 0x7a6a55, 0.7, 0.6, false, 0, 2, 1, true);
+        if (gh < 3 && levelKey === 'hard' && Math.random() < 0.5) for (let k = 0; k < 3; k++) spawnFxParticle(d.mesh.position.clone().setY(gh + 0.3), new THREE.Vector3(rand(-2, 2), rand(5, 9), rand(-2, 2)), 0xffffff, 0.85, rand(0.5, 0.8), false, 24, 0.3, rand(0.4, 0.7), true);   // 小さな水しぶき
         if (d.mesh.parent) d.mesh.parent.remove(d.mesh); debris.splice(i, 1); continue;
       }
     }
@@ -6668,14 +7167,24 @@ function updateDebris(dt) {
         bigSplash(d.mesh.position.clone().setY(0), 1.7);
         playBigSplashSound(0, 1.1);
         playWaterEntry(0, 0.9);
-      } else bigSplash(d.mesh.position.clone().setY(0), 0.6);
+      } else {
+        bigSplash(d.mesh.position.clone().setY(0), 0.6);
+        if (d.bridgeBit) {                                              // 橋のかけらが海面に届いた：水しぶき＋煙
+          d.trail = false;
+          playBigSplashSound(0, 0.8);
+          for (let k = 0; k < 12; k++) spawnFxParticle(d.mesh.position.clone().setY(1).add(new THREE.Vector3(rand(-10, 10), 0, rand(-6, 6))),
+            new THREE.Vector3(rand(-2, 2) + windX, rand(5, 11), rand(-2, 2)), pick([0x7a7a7a, 0x9a9a9a, 0xdfe6ec]), 0.6, rand(2.5, 3.5), false, -0.5, 4.5, rand(2.5, 4), true);
+        }
+      }
     }
     if (d.mesh.position.y < -25 || d.life <= 0) { if (d.mesh.parent) d.mesh.parent.remove(d.mesh); debris.splice(i, 1); }
   }
 }
 function clearDebris() {
+  blownParts = []; bridgeSags = []; bridgeDribbles = [];
   debris.forEach(d => { if (d.mesh.parent) d.mesh.parent.remove(d.mesh); });
   debris = []; bridgeBlasts = []; crashQueue = []; crashFires = [];
+  oilSlicks.forEach(o => scene.remove(o.g)); oilSlicks = [];
   crashLights.forEach(c => scene.remove(c.light)); crashLights = [];
 }
 
