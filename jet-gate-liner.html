@@ -327,8 +327,17 @@
 // 1. 調整したい数字（ここを変えるとゲームの難しさが変わります）
 // =====================================================================
 const CONFIG = {
-  CRASH_SHOW_TIME: 10,
-  CRASH_ANNOUNCE_TIME: 4.5,     // 爆発のあと「CRASH!」の赤い文字と音声アナウンスを出す秒数（そのあと GAME OVER の画面）          // 墜落・激突の爆発シーンを見せる秒数（そのあと GAME OVER・エリア外の画面）
+  CRASH_SHOW_TIME: 10,          // 墜落・激突の爆発シーンを見せる秒数（そのあと GAME OVER・エリア外の画面）
+  CRASH_ANNOUNCE_TIME: 4.5,     // 爆発のあと「CRASH!」の赤い文字と音声アナウンスを出す秒数（そのあと GAME OVER の画面）
+  JET_SAY_SEPARATE: true,       // アナウンスの「ジェット機が」を、前の「…して、ジェット機が炎上しました」のときと同じ言い方にする（false にすると1つの文で読む）
+  CRASH_FIN_SIZE: 13,           // 上級：墜落・激突で吹き飛ぶ垂直尾翼の高さ（大きいほど目立つ。主翼の長さは 16 くらい）
+  CRASH_FIN_SIZE_SMALL: 15,     // 練習・初級・中級：吹き飛ぶ垂直尾翼の高さ（面をカメラに向けて回るので、形がよく見える）
+  CRASH_WING_SIZE_MEDIUM: 1.25, // 中級：吹き飛ぶ主翼の大きさの倍率（暗い色なので少し大きく）
+  CRASH_FIN_GLOW: 0.55,         // 練習・初級・中級：吹き飛ぶ尾翼が、自分の色（練習は水色っぽいブルー、初級はオレンジ）で光る強さ
+  CRASH_FIN_HALO: 0.35,         // 練習・初級・中級：飛んでいる尾翼のうしろの、同じ色の光の輪の濃さ（0 で出さない）
+  CRASH_WING_GLOW: 0.25,        // 吹き飛ぶ翼・尾翼が、自分の色で光る強さ（0 で光らない）
+  CRASH_WING_GLOW_MEDIUM: 0.7,  // 中級：チャコールグレーで暗いので、強めに光らせる
+  CRASH_WING_GLOW_HARD: 0.35,
   AREA_GRACE: 150,              // 左右にエリアの外へ出ても、このはばまでは飛びつづける（そのあいだに山・陸地にぶつかると爆発）
   CRASH_CAM_DIST: 130,          // 墜落・激突の爆発を映すカメラの距離（大きいほど爆発が小さく見える。130 で画面の半分くらい）
   GATE_SPIN: 0.25,              // 初級・中級：ゲートが回る速さ（となりのゲートと逆向き）
@@ -4579,11 +4588,20 @@ function crashAnnounce(cause) {
   try {
     if (sound.on && window.speechSynthesis) {
       window.speechSynthesis.cancel();
-      const v = new SpeechSynthesisUtterance(cause + 'して、' + plane + 'が炎上しました');
-      v.lang = 'ja-JP'; v.rate = 1.0; v.pitch = 1.0; v.volume = 1;
-      const ja = window.speechSynthesis.getVoices().find(x => /^ja/i.test(x.lang));
-      if (ja) v.voice = ja;
-      window.speechSynthesis.speak(v);
+      const ja = window.speechSynthesis.getVoices().find(x => /^ja/i.test(x.lang));   // 日本語の声（前と同じ選び方）
+      const say = (text, pitch, rate) => {
+        const v = new SpeechSynthesisUtterance(text);
+        v.lang = 'ja-JP'; v.rate = rate; v.pitch = pitch; v.volume = 1;
+        if (ja) v.voice = ja;
+        window.speechSynthesis.speak(v);
+      };
+      if (levelKey !== 'hard' && CONFIG.JET_SAY_SEPARATE) {
+        // 「ジェット機が」を、前の「地面に墜落して、ジェット機が炎上しました」のときと同じ言い方にする：
+        //   文のとちゅう（「、」のあと）で言っていたときと同じように、「ジェット機が」をひとまとまりで言ってから、続きを言う
+        //   （「ジェット機」の中では区切らないので、なめらかに聞こえる）
+        say('ジェット機が', 1.0, 1.0);
+        say(cause + 'し、炎上しました', 1.0, 1.0);
+      } else say(plane + 'が' + cause + 'し、炎上しました', 1.0, 1.0);
     }
   } catch (e) { /* 読み上げできなくてもゲームは続ける */ }
 }
@@ -4813,6 +4831,476 @@ function makeCrashScar(base, yaw, snowy, bomb) {
   return g;
 }
 
+// =====================================================================
+// 墜落・激突したあとに残る「機体の残骸」（全レベル）
+//   ・地面（滑走路・基地・雪原）：翼・尾翼・エンジン・胴体のかけらが散らばって、黒こげのまま残る。いくつかは煙を出しつづける
+//   ・山・丘の斜面：斜面にそって下へすべり落ちる。途中で引っかかって止まるもの、ふもとまで転がり落ちるものがある
+//   ・海：しばらく波にゆられて浮かび、やがて沈んで見えなくなる
+//   ・空母の甲板：甲板に散らばって残る。甲板の外へ飛んだものは海に落ちて、浮かんだあと沈む
+//   GAME OVER の画面まで残しておき、次のプレイを始めるときにまとめて消す（clearDebris）
+// =====================================================================
+let wreckParts = [];
+const WRECK_DOWN = new THREE.Vector3(0, -1, 0);
+// (x, z) の地面の高さと向き（法線）と種類。y より上にあるものだけを見る（橋・甲板の下に入ったときのため）
+function wreckGround(x, z, y) {
+  const hard = levelKey === 'hard';
+  let best = { y: hard ? waveHeight(x, z) : 0, n: UP.clone(), kind: hard ? 'sea' : 'ground' };
+  if (hard) {
+    for (const pf of platforms) {                                     // 空母の甲板・橋の道路
+      if (x > pf.x0 && x < pf.x1 && z > pf.z0 && z < pf.z1 && y > pf.y - 1.5 && pf.y > best.y) best = { y: pf.y, n: UP.clone(), kind: 'deck' };
+    }
+    for (const isl of straitIslands) {                                // 島
+      if (!isl.visible) continue;
+      const R = isl.userData.rock, H = isl.userData.h, dx = x - isl.position.x, dz = z - isl.position.z, d = Math.hypot(dx, dz);
+      if (d >= R * 0.98) continue;
+      const q = Math.sqrt(1 - (d / R) * (d / R)), hy = H * q;
+      if (hy > best.y) { const k = H * d / (R * R * q) / Math.max(d, 0.01); best = { y: hy, n: new THREE.Vector3(dx * k, 1, dz * k).normalize(), kind: 'ground' }; }
+    }
+    return best;
+  }
+  for (const mt of mountains) {                                       // 岩山（6角すい：面ごとに、ほんとうの高さを計算する）
+    const lx = x - mt.position.x, lz = z - mt.position.z, r = mt.userData.r, h = mt.userData.h;
+    if (lx * lx + lz * lz > r * r) continue;
+    const step = Math.PI / 3;
+    let ph = Math.atan2(lx, lz); if (ph < 0) ph += Math.PI * 2;
+    const tm = (Math.floor(ph / step) + 0.5) * step;                  // その面のまん中の向き
+    const ap = r * Math.cos(Math.PI / 6);                             // 中心から面までのきょり（ふもと）
+    const dp = lx * Math.sin(tm) + lz * Math.cos(tm);
+    if (dp >= ap) continue;
+    const hy = mt.position.y + h / 2 - h * dp / ap;
+    if (hy > best.y) best = { y: hy, n: new THREE.Vector3(h / ap * Math.sin(tm), 1, h / ap * Math.cos(tm)).normalize(), kind: 'ground' };
+  }
+  for (const hl of hills) {                                           // 丘（つぶれた半球）
+    const r = hl.userData.r, sy = hl.scale.y, dx = x - hl.position.x, dz = z - hl.position.z, d = Math.hypot(dx, dz);
+    if (d >= r * 0.98) continue;
+    const q = Math.sqrt(r * r - d * d), hy = hl.position.y + q * sy;
+    if (hy > best.y) { const k = sy / q; best = { y: hy, n: new THREE.Vector3(dx * k, 1, dz * k).normalize(), kind: 'ground' }; }
+  }
+  return best;
+}
+// 斜面を下る向き（地面の上で）
+function downSlope(n) {
+  const t = WRECK_DOWN.clone().addScaledVector(n, n.y);               // 重力のうち、斜面にそった部分
+  return t.lengthSq() < 1e-6 ? new THREE.Vector3(1, 0, 0) : t.normalize();
+}
+// 面の向き n にぴったり重ねて、長い向きを dir にする
+function orientToSurface(obj, n, dir) {
+  const yA = dir.clone().addScaledVector(n, -dir.dot(n));
+  if (yA.lengthSq() < 1e-6) yA.set(1, 0, 0).addScaledVector(n, -n.x);
+  yA.normalize();
+  const xA = new THREE.Vector3().crossVectors(yA, n).normalize();
+  obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xA, yA, n));
+}
+// 部品の「上」(Y) を面の向き n に、「前」(X) を dir にして置く
+function orientUp(obj, n, dir) {
+  const xA = dir.clone().addScaledVector(n, -dir.dot(n));
+  if (xA.lengthSq() < 1e-6) xA.set(1, 0, 0).addScaledVector(n, -n.x);
+  xA.normalize();
+  const zA = new THREE.Vector3().crossVectors(xA, n).normalize();
+  obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(xA, n, zA));
+}
+// カタパルト発進のときと同じ色・同じ模様の翼にするため、いま乗っている機体の模型から
+// 「右の主翼」と「垂直尾翼」の部品をそのまま写しとる（オレンジの翼端・ネオンのふち・黄色いタンクなども同じ場所に入る）
+const wingCopyCache = {};
+function copyPlaneWingParts() {
+  const key = levelKey || 'easy';
+  if (wingCopyCache[key] !== undefined) return wingCopyCache[key];
+  let result = null;
+  try {
+    const root = planeModels[key] || planeMesh;
+    root.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+    const items = [];
+    root.traverse(o => {
+      if (!o.isMesh || !o.geometry || !o.material) return;
+      const m = o.material;
+      if (m.isMeshBasicMaterial && m.blending === THREE.AdditiveBlending && (m.opacity < 0.6 || o.geometry.type === 'SphereGeometry')) return;   // うすい光のにじみ・ハロー・ランプは写さない（ネオンのラインは写す）
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const rel = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);   // 機体の中での位置・向き
+      const bb = o.geometry.boundingBox.clone().applyMatrix4(rel);
+      const c = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
+      items.push({ o: o, rel: rel, bb: bb, c: c, sz: sz });
+    });
+    // 主翼：胴体より外にある、うすい部品のうち、いちばん外までのびているもの（その前後のはばにある部品をまとめる）
+    // 主翼：胴体より外にある、うすい部品。sd = 1 は右、-1 は左（左右を写しとる）
+    const pickWing = sd => {
+      const X = it => it.c.x * sd, MX = it => (sd > 0 ? it.bb.max.x : -it.bb.min.x);
+      const thin = items.filter(it => X(it) > 1.2 && it.sz.y < 0.9 && it.c.y < 0.8);
+      const main = thin.filter(it => it.sz.y < 0.45).reduce((a, b) => (!a || b.sz.x * b.sz.z > a.sz.x * a.sz.z ? b : a), null);   // いちばん面積の大きい平らな板＝主翼
+      // 前後が主翼の中にあるもの（水平尾翼は入れない）。翼の先のタンク・ミサイルは前後に長くても入れる。翼より下にぶら下がるエンジンポッドなどは入れない
+      return main ? thin.filter(it => ((it.c.z > main.bb.min.z - 0.3 && it.c.z < main.bb.max.z + 0.3) || (X(it) > MX(main) - 0.6 && it.c.z > main.bb.min.z - 2.2 && it.c.z < main.bb.max.z + 2.2)) && it.c.y > main.c.y - 0.25 && it.c.y < main.c.y + 0.9) : [];
+    };
+    const wing = pickWing(1), wingL = pickWing(-1);
+    // 垂直尾翼：胴体より上にある部品（2枚あるときは左の1枚）
+    // 垂直尾翼：胴体より上にある部品。まん中に1枚の機体はその1枚、左右に2枚ある機体（上級）は左・右それぞれ
+    const pickFin = sd => {
+      const tall = items.filter(it => it.c.y > 0.9 && Math.abs(it.c.x) < 2.6 && it.c.x * sd > -0.35 && it.sz.y > 0.25);
+      if (!tall.length) return [];
+      const top = tall.reduce((a, b) => (b.sz.y > a.sz.y ? b : a)).c;
+      const single = Math.abs(top.x) < 0.35;
+      if (single && sd > 0) return [];                              // 1枚だけの機体：右の尾翼はない
+      return items.filter(it => it.c.y > 0.9 && Math.abs(it.c.x) < 2.6 && (single || Math.abs(it.c.x - top.x) < 0.7) && Math.abs(it.c.z - top.z) < 2.2
+        && !(it.sz.y < 0.35 && it.sz.x > 0.8));                      // 垂直尾翼だけ（T字の上にのった、横に平らな水平尾翼は入れない）
+    };
+    const fin = pickFin(-1), finR = pickFin(1);
+    const build = (list, layFlat) => {
+      if (!list.length) return null;
+      const box = new THREE.Box3(); list.forEach(it => box.union(it.bb));
+      const ctr = box.getCenter(new THREE.Vector3());
+      const inner = new THREE.Group();
+      list.forEach(it => {
+        const m = new THREE.Mesh(it.o.geometry, it.o.material);   // 同じ形・同じ色（材料もそのまま）
+        it.rel.decompose(m.position, m.quaternion, m.scale);
+        m.position.sub(ctr);
+        inner.add(m);
+      });
+      if (layFlat) inner.rotation.z = Math.PI / 2;                    // 尾翼は横にねかせた形を「基本」にする（地面に置いたとき、ぺたんと寝る）
+      const size = box.getSize(new THREE.Vector3());
+      return { inner: inner, size: size };
+    };
+    const w = build(wing, false), wl = build(wingL, false), f = build(fin, true), fr = build(finR, true);
+    if (w && wl && f) {
+      const k = 16 / Math.max(1, w.size.x);                           // 主翼の長さが 16 くらいになる大きさ（尾翼も同じ倍率）
+      result = { wing: w, wingL: wl, fin: f, finR: fr, k: k };   // finR は、尾翼が2枚ある機体（上級）だけ
+    }
+  } catch (e) { result = null; }
+  wingCopyCache[key] = result;
+  return result;
+}
+// 機体の残骸の部品を1つ作る（黒こげ＋少しだけ元の色）
+function makeWreckPart(type, hard) {
+  const body = hard ? 0x5e6873 : levelKey === 'medium' ? 0x8f969c : 0xb8bec4;
+  const burnt = () => mat(pick([0x1c1b1a, 0x262422, 0x302d2a, body]), { flatShading: true });
+  const g = new THREE.Group();
+  let half = 0.3, roll = false;
+  if (type === 'wing') {                                              // 主翼（ちぎれて、先がとがった板）
+    const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(9, 1.2); sh.lineTo(9.5, 3); sh.lineTo(0, 4.5); sh.lineTo(rand(-0.8, 0.5), 2.4); sh.lineTo(0, 0);
+    const m = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 0.35, bevelEnabled: false }), burnt());
+    m.rotation.x = -Math.PI / 2; m.position.set(-4.5, 0, 2);
+    g.add(m); half = 0.2;
+  } else if (type === 'fin') {                                        // 尾翼（たて）＋ 水平尾翼のかけら
+    const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(4, 0); sh.lineTo(2.6, 3.8); sh.lineTo(1, 3.8); sh.lineTo(0, 0);
+    const fin = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 0.3, bevelEnabled: false }), burnt());
+    fin.position.set(-2, 0, -0.15); g.add(fin);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(5, 0.25, 2), burnt()); st.position.set(0, 0.2, 0); g.add(st);
+    half = 0.25;
+  } else if (type === 'engine') {                                     // エンジン（焼けた筒と、ノズル）
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.15, 4.2, 10, 1, true), mat(0x2a2826, { side: THREE.DoubleSide }));
+    c.rotation.z = Math.PI / 2; g.add(c);
+    const nz = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 0.85, 1.3, 10, 1, true), mat(0x4a3a30, { side: THREE.DoubleSide }));
+    nz.rotation.z = Math.PI / 2; nz.position.x = 2.7; g.add(nz);
+    half = 1.05; roll = true;
+  } else if (type === 'fuselage') {                                   // 胴体のかけら（ちぎれた筒）
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.5, 5.5, 10, 1, true, 0, Math.PI * rand(1.1, 1.7)), mat(pick([0x24221f, body]), { side: THREE.DoubleSide, flatShading: true }));
+    c.rotation.z = Math.PI / 2; g.add(c);
+    half = 1.2; roll = true;
+  } else if (type === 'nose') {                                       // 機首（とがった先）
+    const c = new THREE.Mesh(new THREE.ConeGeometry(1.2, 3.6, 10, 1, true), mat(0x2c2a28, { side: THREE.DoubleSide }));
+    c.rotation.z = -Math.PI / 2; g.add(c);
+    half = 1.0; roll = true;
+  } else {                                                            // 小さな金属片
+    const m = new THREE.Mesh(shardGeo(Math.random() < 0.4), burnt());
+    const sz = rand(1.0, 2.2); m.scale.set(sz * rand(0.8, 1.6), sz * 0.35, sz);
+    g.add(m); half = 0.3 * sz;
+  }
+  g.scale.setScalar(1.4);                                             // 爆発カメラから見えるくらいの大きさ
+  return { g: g, half: half * 1.4, roll: roll };
+}
+// 残骸をまき散らす。kind = 'ground' | 'sea' | 'bridge'（空母・橋）
+function spawnPlaneWreck(pos, kind) {
+  spawnPlaneWreck.dirX = 0;                                         // 橋：左右の主翼が飛ぶ向き（このあと決める）
+  const hard = levelKey === 'hard';
+  const ax = planeAxes();
+  const at = wreckGround(pos.x, pos.z, pos.y + 4);
+  const slope = at.kind === 'ground' && at.n.y < 0.93;
+  const types = ['wing', 'wingL', 'fin', 'engine', 'fuselage', 'nose'];   // 形でわかる大きなパーツ：主翼2枚（右・左）と垂直尾翼
+  const cp0 = copyPlaneWingParts();
+  if ((cp0 && cp0.finR) || (!cp0 && hard)) types.splice(3, 0, 'finR');   // 上級は垂直尾翼が2枚あるので、2つとも吹き飛ぶ
+  for (let i = 0; i < 12; i++) types.push('bit');
+  types.forEach((type, i) => {
+    const big = type === 'wing' || type === 'wingL' || type === 'fin' || type === 'finR';
+    const copy = big ? copyPlaneWingParts() : null;
+    let w;
+    if (copy) {                                                       // カタパルト発進のときと同じ色・模様の翼
+      const part = copy[type], g = new THREE.Group();
+      const inner = part.inner.clone();
+      const finT = type === 'fin' || type === 'finR';
+      // 暗い夜・煙の中でも見えるように、機体と同じ色のまま、自分で少し光らせる（色合いは変わらない）
+      const glowK = finT ? CONFIG.CRASH_FIN_GLOW : hard ? CONFIG.CRASH_WING_GLOW_HARD : levelKey === 'medium' ? CONFIG.CRASH_WING_GLOW_MEDIUM : CONFIG.CRASH_WING_GLOW;
+      // その部品の「いちばん大きい色」（練習の尾翼なら水色っぽいブルー、初級ならオレンジ）
+      let mainCol = null, mainA = -1;
+      inner.traverse(o => {
+        if (!o.isMesh || !o.material || o.material.isMeshBasicMaterial) return;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        const sz = o.geometry.boundingBox.getSize(new THREE.Vector3()), a = sz.x * sz.y + sz.y * sz.z + sz.x * sz.z;
+        if (a > mainA) { mainA = a; mainCol = o.material.color.getHex(); }
+      });
+      // 暗い色（中級のチャコールグレー）のときは、いちばん明るい色（オレンジのライン）を、光の輪・光る尾に使う
+      const lum = c => (((c >> 16) & 255) * 0.3 + ((c >> 8) & 255) * 0.59 + (c & 255) * 0.11) / 255;
+      //   上級の濃紺の尾翼は、ふちの青いネオンの色を使う
+      if (mainCol !== null && lum(mainCol) < 0.3) inner.traverse(o => {
+        if (o.isMesh && o.material && o.material.color && lum(o.material.color.getHex()) > lum(mainCol)) mainCol = o.material.color.getHex();
+      });
+      inner.traverse(o => {
+        if (!o.isMesh || !o.material || o.material.isMeshBasicMaterial || !o.material.emissive) return;
+        o.material = o.material.clone();
+        o.material.emissive.copy(o.material.color);
+        o.material.emissiveIntensity = glowK;
+      });
+      g.add(inner);
+      // 尾翼は、そのままの倍率だと小さくて見えにくいので、高さが CRASH_FIN_SIZE くらいになるまで大きくする
+      const finSize = hard ? CONFIG.CRASH_FIN_SIZE : CONFIG.CRASH_FIN_SIZE_SMALL;   // 上級は2枚あるので、少しだけ小さめ
+      const wingMul = !hard && levelKey === 'medium' ? CONFIG.CRASH_WING_SIZE_MEDIUM : 1;   // 中級の主翼は少し大きく
+      const camK = kind === 'bridge' && lastHitStructure && lastHitStructure.bridge ? 1.2 : 1;                       // 橋のときはカメラが 1.2 倍遠いので、そのぶん大きくして、海のときと同じ大きさに見せる
+      const kk = finT ? Math.max(copy.k, finSize * camK / Math.max(0.5, part.size.y)) : copy.k * wingMul;
+      g.scale.setScalar(kk);
+      const thick = finT ? part.size.x : part.size.y;                 // ねかせたときの厚み
+      // もげたつけ根（ここから炎が出る）：右の主翼は内がわ（-X）、左の主翼は +X、尾翼は下の辺（ねかせたので +X）
+      const root = new THREE.Vector3(type === 'wing' ? -part.size.x / 2 : type === 'wingL' ? part.size.x / 2 : part.size.y / 2, 0, 0);
+      let halo = null;
+      if (finT && mainCol !== null) {
+        // 尾翼（全レベル）：うしろに、尾翼と同じ色のやわらかい光の輪（飛んでいるあいだだけ）
+        halo = new THREE.Mesh(new THREE.CircleGeometry(Math.max(part.size.y, part.size.z) * 0.62, 28), glowMat(mainCol, CONFIG.CRASH_FIN_HALO));
+        halo.rotation.x = -Math.PI / 2;
+        halo.position.y = -Math.max(0.05, part.size.x);               // 尾翼の面のすぐうしろ（カメラから見て奥）
+        g.add(halo);
+      }
+      w = { g: g, half: Math.max(0.3, thick * kk * 0.5), roll: false, root: root, halo: halo, col: mainCol };
+    } else {
+      w = makeWreckPart(type === 'wingL' ? 'wing' : type === 'finR' ? 'fin' : type, hard);
+      if (type === 'wingL') w.g.children.forEach(c => { c.scale.x = -1; c.position.x = -c.position.x; });   // 左の主翼（右の形を左右反転）
+      const isFin = type === 'fin' || type === 'finR';
+      if (big) { w.g.scale.setScalar(isFin ? 3.0 : 2.0); w.half = w.half / 1.4 * (isFin ? 3.0 : 2.0); }   // 翼は大きめに（尾翼はとくに大きく）
+    }
+    const start = pos.clone().addScaledVector(at.n, 3).add(new THREE.Vector3(rand(-2, 2), 2, rand(-2, 2)));
+    w.g.position.copy(start);
+    w.g.rotation.set(rand(0, 6), rand(0, 6), rand(0, 6));
+    scene.add(w.g);
+    let v;
+    if (kind === 'sea') {                                             // 海：水柱といっしょに上へ、まわりへ
+      const a = Math.random() * Math.PI * 2;
+      v = new THREE.Vector3(Math.cos(a) * rand(6, 20), rand(14, 30), Math.sin(a) * rand(6, 20));
+    } else if (slope) {                                               // 山：斜面ではね返って、少し前へ
+      const side = new THREE.Vector3().crossVectors(at.n, downSlope(at.n));   // 斜面にそった横向き
+      v = at.n.clone().multiplyScalar(rand(3, 9)).addScaledVector(downSlope(at.n), rand(2, 10)).addScaledVector(side, rand(-9, 9));   // 斜面の上に落ちるくらいの勢い
+    } else {                                                          // 地面・甲板：前のほうへ多く飛ぶ
+      const side = new THREE.Vector3(ax.fwd.z, 0, -ax.fwd.x);
+      v = ax.fwd.clone().multiplyScalar(rand(4, 26)).addScaledVector(side, rand(-14, 14)).add(new THREE.Vector3(0, rand(8, 24), 0));
+    }
+    let spin = new THREE.Vector3(rand(-6, 6), rand(-6, 6), rand(-6, 6));
+    if (big) {
+      // 翼：もげて、クルクル回転しながら高く・ななめに吹き飛ぶ
+      const ax2 = planeAxes(), side = new THREE.Vector3(ax2.fwd.z, 0, -ax2.fwd.x), sgn = type === 'wing' ? 1 : type === 'wingL' ? -1 : type === 'finR' ? rand(0.2, 0.6) : (types.includes('finR') ? -rand(0.2, 0.6) : rand(-0.4, 0.4));   // 右の主翼は右へ、左の主翼は左へ、尾翼はまん中あたりへ（2枚のときは少し左右に分かれる）
+      const isFinT = type === 'fin' || type === 'finR';
+      const onBridge = kind === 'bridge' && lastHitStructure && lastHitStructure.bridge;   // 空母ではなく、橋に激突した
+      if (kind === 'sea' || (onBridge && isFinT)) v = side.clone().multiplyScalar(sgn * rand(10, 18)).addScaledVector(ax2.fwd, rand(2, 10)).add(new THREE.Vector3(0, rand(24, 34), 0));   // 尾翼は、橋でも海のときと同じ飛び方
+      else if (slope) v = at.n.clone().multiplyScalar(rand(12, 18)).addScaledVector(downSlope(at.n), rand(4, 9)).addScaledVector(side, sgn * rand(4, 10)).add(new THREE.Vector3(0, rand(8, 14), 0));
+      else if (kind === 'bridge') {
+        const br = lastHitStructure && lastHitStructure.bridge;
+        if (br && (type === 'wing' || type === 'wingL')) {                                  // 主翼：橋の上を、道路にそって遠くへ吹き飛び、残った道路の上に落ちる（右の翼と左の翼は反対がわへ）
+          if (!spawnPlaneWreck.dirX) spawnPlaneWreck.dirX = Math.random() < 0.5 ? -1 : 1;
+          const dirX = type === 'wing' ? spawnPlaneWreck.dirX : -spawnPlaneWreck.dirX;
+          v = new THREE.Vector3(dirX * rand(40, 48), rand(27, 31), (br.position.z - start.z) * 0.45 + ax2.fwd.z * rand(1, 3));
+        } else v = ax2.fwd.clone().multiplyScalar(rand(16, 28)).addScaledVector(side, sgn * rand(4, 12)).add(new THREE.Vector3(0, rand(20, 30), 0));   // 進行方向へ吹き飛び、橋から海へ落ちていく
+      }
+      else v = ax2.fwd.clone().multiplyScalar(rand(8, 20)).addScaledVector(side, sgn * rand(8, 16)).add(new THREE.Vector3(0, rand(24, 34), 0));
+      spin = new THREE.Vector3((sgn >= 0 ? 1 : -1) * rand(9, 14), rand(-3, 3), rand(-5, 5));   // 長いほうを軸に、すばやく回る
+      if (type === 'fin' || type === 'finR') {
+        // 尾翼：主翼より少しおくれて、いちばん高く吹き上がる。回転は少しゆっくりにして、形が見えるようにする
+        v.y = rand(34, 42); v.x *= 0.6; v.z *= 0.6;
+        {                                                              // 煙にかくれないように、カメラのある手前がわへ飛ばす
+          const tc = camera.position.clone().sub(pos); tc.y = 0;
+          if (tc.lengthSq() > 1) v.addScaledVector(tc.normalize(), rand(7, 11));
+        }
+        spin = new THREE.Vector3(rand(-1.5, 1.5), (Math.random() < 0.5 ? -1 : 1) * rand(4.5, 6.5), rand(-2.5, 2.5));
+      }
+    }
+    wreckParts.push({ g: w.g, half: w.half, roll: w.roll || big, vel: v, spin: spin, big: big,
+      halo: w.halo || null, col: w.col, root: w.root || null, faceCam: type === 'fin' || type === 'finR', pin: rand(0, 6), pinV: (Math.random() < 0.5 ? -1 : 1) * rand(5, 7),
+      state: 'fly', delay: big ? ((type === 'fin' || type === 'finR') ? 0.25 + (type === 'finR' ? 0.12 : 0) : 0.05) : rand(0, 0.12), bounced: false, trailT: 0, fin: type === 'fin' || type === 'finR',
+      stick: big ? 1e9 : Math.random() < 0.6 ? rand(3, 22) : 1e9,   // 翼は斜面で止まらず、下まで転がり落ちる                // 斜面：このきょりをすべったら引っかかって止まる（止まらないものは、ふもとまで）
+      slid: 0, yawSpin: rand(-2, 2), curYaw: rand(0, 6), rollA: 0,
+      smoke: (type === 'engine' || type === 'fuselage' || i === 0 || (type === 'bit' && Math.random() < 0.25)) ? 30 : 0, smokeT: rand(0, 0.3),
+      floatT: big ? rand(1.5, 3) : rand(4, 9), sinkV: 0, bob: rand(0, 6) });
+  });
+}
+// 翼が地面・雪・甲板に落ちた所に残る、小さな跡（2回目からは出さない）
+function wingMark(x, z, gr) {
+  const snowy = levelKey === 'medium' && snowCover > 0.08;
+  const m = new THREE.Mesh(jagDisc(rand(3, 4.5), 0.35, 1, rand(1.3, 1.9), 20), new THREE.MeshBasicMaterial({
+    color: gr.kind === 'deck' ? 0x1e1e1e : snowy ? 0x9aa4ae : 0x4a3524, transparent: true, opacity: snowy ? 0.7 : 0.75, depthWrite: false }));
+  m.rotation.set(-Math.PI / 2, 0, rand(0, 6));
+  m.position.set(x, gr.y + 0.45, z);
+  m.renderOrder = 6;
+  courseGroup.add(m);
+  for (let k = 0; k < 10; k++) spawnFxParticle(new THREE.Vector3(x, gr.y + 0.6, z), new THREE.Vector3(rand(-6, 6), rand(3, 9), rand(-6, 6)),
+    snowy ? 0xf6f9fc : gr.kind === 'deck' ? 0x9a9a9a : 0x8a7a68, 0.8, rand(0.6, 1.1), false, 14, 0.8, rand(0.6, 1.2), true);   // 雪けむり・土けむり
+}
+function restWreck(w, gr, x, z) {
+  if (w.halo) w.halo.visible = false;                               // 光の輪は、飛んでいるあいだだけ
+  w.state = gr.kind === 'sea' ? 'float' : 'rest';
+  if (w.state === 'float') {
+    for (let k = 0; k < 6; k++) spawnFxParticle(new THREE.Vector3(x, gr.y + 0.4, z), new THREE.Vector3(rand(-3, 3), rand(6, 14), rand(-3, 3)), 0xffffff, 0.9, rand(0.6, 1.0), false, 24, 0.4, rand(0.6, 1.1), true);   // ポチャン
+    return;
+  }
+  orientUp(w.g, gr.n, new THREE.Vector3(Math.cos(w.curYaw), 0, Math.sin(w.curYaw)));
+  w.g.rotateX(rand(-0.25, 0.25));                                     // 少し傾いて止まる
+  w.g.position.set(x, gr.y, z).addScaledVector(gr.n, w.half);
+}
+function updateWreckParts(dt) {
+  for (let i = wreckParts.length - 1; i >= 0; i--) {
+    const w = wreckParts[i], p = w.g.position;
+    if (w.delay > 0) { w.delay -= dt; continue; }
+    if (w.state === 'fly') {
+      w.vel.y -= 26 * dt;
+      p.addScaledVector(w.vel, dt);
+      if (w.faceCam) {
+        // 尾翼（全レベル。上級は2枚とも）：形がいつも見えるように、面をカメラのほうへ向けたまま、風車のようにクルクル回す
+        const toCam = camera.position.clone().sub(p).normalize();
+        w.pin += w.pinV * dt;
+        w.g.quaternion.setFromUnitVectors(UP, toCam);                 // ねかせた尾翼の面（上＝Y）をカメラへ
+        w.g.rotateY(w.pin);                                           // その向きのまま回転
+        w.g.rotateZ(Math.sin(w.pin * 0.7) * 0.25);                    // 少しだけゆらす
+      } else {
+        w.g.rotation.x += w.spin.x * dt; w.g.rotation.y += w.spin.y * dt; w.g.rotation.z += w.spin.z * dt;
+      }
+      if (w.big && w.root && Math.random() < 0.7) {                   // もげたつけ根が燃えている（オレンジの炎で目立つ）
+        const rp = w.g.localToWorld(w.root.clone());
+        spawnFxParticle(rp, new THREE.Vector3(rand(-1, 1), rand(0, 2), rand(-1, 1)), pick([0xff5a00, 0xff8a00, 0xffc040]), 1, rand(0.25, 0.45), true, -1, 1.8, rand(1.0, 1.8), true);
+      }
+      if (w.big) {                                                    // 飛んでいく翼のうしろに、小さな煙と火花
+        w.trailT -= dt;
+        if (w.trailT <= 0) {
+          w.trailT = w.fin ? 0.035 : 0.045;
+          const tk = w.fin ? 1.6 : 1;                                  // 尾翼は、煙の尾を太めにして、飛んでいく道すじを目立たせる
+          if (w.faceCam && w.col !== undefined && w.col !== null) {    // 尾翼：尾翼と同じ色（練習は水色・初級はオレンジ・上級は青いネオン）に光る尾を引く
+            spawnFxParticle(p.clone(), new THREE.Vector3(rand(-0.6, 0.6), rand(-0.3, 0.6), rand(-0.6, 0.6)), w.col, 0.9, rand(0.5, 0.8), true, 0, 1.2, rand(1.2, 1.8), true);
+            if (Math.random() < 0.5) spawnFxParticle(p.clone(), new THREE.Vector3(rand(-2, 2), rand(-1, 2), rand(-2, 2)), 0xffffff, 1, rand(0.2, 0.35), true, 6, -0.5, rand(0.35, 0.6), true);   // キラッ
+          } else {
+            spawnFxParticle(p.clone(), new THREE.Vector3(rand(-0.5, 0.5), rand(0, 1), rand(-0.5, 0.5)), pick([0x2a2a2a, 0x444444, 0x5a5a5a]), 0.65, rand(0.7, 1.1) * tk, false, -0.5, 2.2, rand(0.9, 1.4) * tk, true);
+            if (Math.random() < (w.fin ? 0.8 : 0.5)) spawnFxParticle(p.clone(), new THREE.Vector3(rand(-3, 3), rand(-2, 2), rand(-3, 3)), pick([0xffd040, 0xff9a20]), 1, rand(0.25, 0.45), true, 12, -0.5, rand(0.25, 0.45), true);
+          }
+        }
+      }
+      const gr = wreckGround(p.x, p.z, p.y + 3);
+      if (p.y - w.half <= gr.y && w.vel.y < 0) {
+        w.curYaw = Math.atan2(w.vel.z, w.vel.x);
+        if (gr.kind === 'sea') {
+          if (w.big) {                                                // 翼：ザバッと水しぶきを上げてから、すぐに沈んでいく
+            bigSplash(new THREE.Vector3(p.x, gr.y, p.z), 0.45);
+            playBigSplashSound(0, 0.5);
+          }
+          restWreck(w, gr, p.x, p.z); continue;
+        }
+        if (w.big && gr.n.y >= 0.93 && !w.marked) { w.marked = true; wingMark(p.x, p.z, gr); }          // 翼が落ちた所の、ちょっとした跡
+        if (!w.bounced && w.vel.y < (w.big ? -8 : -14) && gr.n.y >= 0.93) {   // 平らな所：ドスン！と1回はねる（斜面では、はねずにすべり出す）
+          w.bounced = true;
+          if (w.halo) w.halo.visible = false;
+          w.vel.reflect(gr.n).multiplyScalar(0.3);
+          w.spin.multiplyScalar(0.4);
+          p.y = gr.y + w.half + 0.1;
+          spawnFxParticle(p.clone(), new THREE.Vector3(0, 3, 0), snowCover > 0.08 && levelKey === 'medium' ? 0xf2f6fa : 0x8a7a68, 0.6, 1.2, false, 0, 3, 2.2, true);   // 土けむり・雪けむり
+          continue;
+        }
+        if (gr.n.y < 0.93) { w.state = 'slide'; w.vel = downSlope(gr.n).multiplyScalar(rand(3, 8)); w.spin.multiplyScalar(0.3); w.cp = new THREE.Vector3(p.x, gr.y, p.z); }   // cp = 斜面にふれている点
+        else restWreck(w, gr, p.x, p.z);
+      }
+    } else if (w.state === 'slide') {                                 // 山の斜面を、下へすべり落ちる
+      const cp = w.cp;
+      let gr = wreckGround(cp.x, cp.z, cp.y + 3);
+      const dn = downSlope(gr.n);
+      const sp = Math.min(28, w.vel.length() + 26 * Math.sqrt(1 - gr.n.y * gr.n.y) * dt * 0.8);
+      w.vel.copy(dn).multiplyScalar(sp * (1 - 0.6 * dt));
+      cp.addScaledVector(w.vel, dt);
+      w.slid += sp * dt;
+      gr = wreckGround(cp.x, cp.z, cp.y + 3);
+      cp.y = gr.y;
+      if (w.roll) {                                                   // 筒の形のものは、横向きになって、ごろごろ転がる
+        orientUp(w.g, gr.n, new THREE.Vector3().crossVectors(gr.n, dn));
+        w.rollA += sp * dt / Math.max(0.5, w.half); w.g.rotateX(w.rollA);
+      } else {                                                        // 板の形のものは、くるりと向きを変えながらすべる
+        w.curYaw += w.yawSpin * dt;
+        orientUp(w.g, gr.n, new THREE.Vector3(Math.cos(w.curYaw), 0, Math.sin(w.curYaw)));
+      }
+      p.copy(cp).addScaledVector(gr.n, w.half);
+      w.trailT = (w.trailT || 0) - dt;
+      if (w.trailT <= 0) {                                            // 土ぼこり・小石
+        w.trailT = 0.12;
+        spawnFxParticle(p.clone(), new THREE.Vector3(rand(-1, 1), rand(1, 3), rand(-1, 1)), pick([0x8a7a68, 0x6f6252]), 0.55, rand(0.8, 1.3), false, 0, 2.5, rand(1, 1.8), true);
+      }
+      if (w.slid > w.stick || gr.n.y >= 0.93) restWreck(w, gr, cp.x, cp.z);   // 引っかかった／ふもとに着いた
+    } else if (w.state === 'float') {                                 // 海：波にゆられて浮かび、やがて沈む
+      w.floatT -= dt; w.bob += dt;
+      const sea = waveHeight(p.x, p.z);
+      if (w.floatT > 0) {
+        p.x += (windX * 0.08) * dt; p.y = sea + Math.sin(w.bob * 1.7) * 0.25 - w.half * 0.3;
+        w.g.rotation.x = Math.sin(w.bob * 1.3) * 0.18; w.g.rotation.z = Math.cos(w.bob * 1.1) * 0.15; w.g.rotation.y += w.yawSpin * 0.1 * dt;
+      } else {
+        w.sinkV = Math.min(3, w.sinkV + 1.2 * dt);
+        p.y -= w.sinkV * dt;
+        w.g.rotation.x += 0.4 * dt;
+        if (Math.random() < 0.3) spawnFxParticle(new THREE.Vector3(p.x + rand(-1, 1), sea + 0.3, p.z + rand(-1, 1)), new THREE.Vector3(0, rand(1, 3), 0), 0xe8f4ff, 0.7, 0.5, false, 0, 1.5, rand(0.3, 0.6), true);   // あわ
+        if (p.y < sea - 12) { scene.remove(w.g); wreckParts.splice(i, 1); continue; }
+      }
+    }
+    if (w.smoke > 0 && w.state !== 'fly' && !(w.state === 'float' && w.floatT <= 0)) {   // くすぶって煙を出しつづける
+      w.smoke -= dt; w.smokeT -= dt;
+      if (w.smokeT <= 0) {
+        w.smokeT = w.state === 'float' ? 0.3 : 0.18;
+        spawnFxParticle(p.clone().add(new THREE.Vector3(rand(-1, 1), 1, rand(-1, 1))), new THREE.Vector3(rand(-0.6, 0.6) + windX * 0.6, rand(3, 6), rand(-0.6, 0.6)),
+          pick([0x1a1a1a, 0x2a2a2a, 0x3a3836]), 0.6, rand(2, 3), false, -0.4, 3.5, rand(1.2, 2), true);
+        if (w.state !== 'float' && Math.random() < 0.3) spawnFxParticle(p.clone().add(new THREE.Vector3(0, 0.5, 0)), new THREE.Vector3(0, rand(1, 3), 0), pick([0xff6a00, 0xff9a20]), 0.8, 0.4, true, -1, 1.5, rand(0.5, 0.9), true);   // 小さな火
+      }
+    }
+  }
+}
+// 山・丘の斜面：ぶつかった所から下へ、帯のように伸びる焦げ跡・削れ跡
+function makeSlopeScar(pos) {
+  const g = new THREE.Group();
+  courseGroup.add(g);
+  const add = (geo, color, op, at, n, dir, lift, order) => {
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: op, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    orientToSurface(m, n, dir);
+    m.position.copy(at).addScaledVector(n, lift);
+    m.renderOrder = order;
+    g.add(m);
+  };
+  let x = pos.x, z = pos.z;
+  const snowy = levelKey === 'medium' && snowCover > 0.08;
+  for (let k = 0; k < 11; k++) {                                     // 斜面を下る道すじにそって、少しずつ置いていく
+    const gr = wreckGround(x, z, 1e4);
+    if (gr.n.y >= 0.97 && k > 0) break;                               // ふもと（平ら）に着いたら終わり
+    const dn = downSlope(gr.n), at = new THREE.Vector3(x, gr.y, z);
+    const w = k === 0 ? 1.5 : Math.max(0.55, 1.25 - k * 0.07);        // 上（ぶつかった所）がいちばん太い
+    add(jagDisc(10 * w, 0.3, 1.25, 1.1, 32), snowy ? 0x4a4540 : 0x5a3e26, 0.85, at, gr.n, dn, 0.7, 3);   // 削れて見えた土・岩
+    add(jagDisc(7 * w, 0.32, 1.0, 1.0, 32), 0x0b0907, 0.92, at, gr.n, dn, 0.8, 4);                        // 焦げ跡
+    if (k === 0) add(jagDisc(5, 0.35, 1, 1.2, 24), 0x020202, 1, at, gr.n, dn, 0.9, 5);                    // 激突したところの黒いくぼみ
+    for (let j = 0; j < 3; j++) {                                    // まわりにバラバラと散ったススのドット
+      const side = new THREE.Vector3().crossVectors(gr.n, dn).normalize();
+      const q = at.clone().addScaledVector(side, rand(-16, 16) * w).addScaledVector(dn, rand(-6, 6));
+      const g2 = wreckGround(q.x, q.z, 1e4);
+      add(jagDisc(rand(0.8, 2.4), 0.35, 1, rand(0.6, 1.5), 12), pick([0x0a0a0a, 0x1c1814]), rand(0.6, 0.9), new THREE.Vector3(q.x, g2.y, q.z), g2.n, dn, 0.75, 4);
+    }
+    x += dn.x * 7; z += dn.z * 7;                                     // 下へ進む
+  }
+}
+// 空母の甲板：ぶつかった所の焦げ跡と、こすった跡
+function makeDeckScorch(pos, deckY, yaw) {
+  const g = new THREE.Group();
+  g.position.set(pos.x, deckY, pos.z);
+  g.rotation.y = yaw;
+  courseGroup.add(g);
+  const flat = (geo, color, op, x, z, y, rot) => {
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: op, depthWrite: false }));
+    m.rotation.set(-Math.PI / 2, 0, rot || 0); m.position.set(x, y, z); g.add(m);
+  };
+  flat(jagDisc(16, 0.32, 0.9, 1.6), 0x1a1714, 0.6, 0, -6, 0.3);       // うすく広がったスス
+  flat(jagDisc(8, 0.35, 0.9, 1.4), 0x050505, 0.92, 0, -2, 0.35);      // まっ黒な焦げ跡
+  flat(jagDisc(2.5, 0.25, 0.7, 7, 20), 0x0c0b0a, 0.8, 0, 12, 0.33);  // 機体が甲板をこすった跡
+  for (let i = 0; i < 18; i++) flat(jagDisc(rand(0.5, 1.8), 0.35, 1, rand(0.6, 1.5), 12), 0x0c0c0c, rand(0.6, 0.9), rand(-14, 14), rand(-26, 8), 0.34 + i * 0.001, rand(0, 6));
+}
+
 let crashView = null;   // 墜落・激突を映すカメラ（爆発が画面の半分くらいになる距離）
 function crashFx(kind, pos) {
   crashView = { pos: pos.clone(), yaw: plane.yaw, dist: kind === 'bridge' ? CONFIG.CRASH_CAM_DIST * 1.2 : CONFIG.CRASH_CAM_DIST };
@@ -4827,7 +5315,9 @@ function crashFx(kind, pos) {
     flingPieces(p0, 26, { small: true, min: 0.3, max: 1.2 });        //    細かい金属片
     later(0.15, () => fireball(p0.clone().add(new THREE.Vector3(rand(-6, 6), 3, rand(-6, 6))), 0.8));
     heavySmoke(p0, 1.2, 40);                                         // ④ 重たい黒煙が空高くモクモク
-    crashFires.push({ pos: p0, t: 9, spawn: 0 });                    //    しばらく燃えつづける
+    crashFires.push({ pos: p0, t: CONFIG.CRASH_SHOW_TIME + CONFIG.CRASH_ANNOUNCE_TIME + 2, spawn: 0, age: 0 });   //    しばらく燃えつづけ、GAME OVER の画面まで煙を出す
+    spawnPlaneWreck(pos, 'ground');                                  // ⑤ 翼・尾翼・エンジンなどの残骸が散らばって残る
+    if (levelKey !== 'hard' && g0 >= 3) makeSlopeScar(pos);          //    山・丘の斜面：下へ伸びる焦げ跡・削れ跡
     if (!levelKey || levelKey !== 'hard') bigDirtBlast(p0.clone().setY(g0), 1.2);
     playBigBoom(0, 1.8); playBigBoom(0.22, 1.1); playBigBoom(0.55, 0.7);
     tone(32, 0.05, 2.4, 'sawtooth', 0.18, 22);                       // ゴゴゴゴ…
@@ -4839,32 +5329,51 @@ function crashFx(kind, pos) {
   } else if (kind === 'sea') {
     const sea = Math.max(0.3, waveHeight(pos.x, pos.z));
     const p0 = new THREE.Vector3(pos.x, sea, pos.z);
-    // ① 衝撃と閃光（0.0〜0.2秒）：激突と同時に白い水柱が上がり、オレンジ色の巨大な火球が一瞬だけ広がる
-    playWaterEntry(0, 1.4); playBigBoom(0, 1.5); tone(42, 0, 1.6, 'sine', 0.9, 24);
-    playBigSplashSound(0.05, 1.8);
-    spawnFxParticle(p0.clone().add(new THREE.Vector3(0, 4, 0)), new THREE.Vector3(), 0xfff2d0, 1, 0.2, true, 0, 9, 5, true);   // まぶしい閃光
-    for (let i = 0; i < 36; i++) {                                   // 一瞬で広がって消える、巨大な火球
-      const a = Math.random() * Math.PI * 2, e = rand(0, 1.2);
-      const v = new THREE.Vector3(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e)).multiplyScalar(rand(24, 48));
-      spawnFxParticle(p0.clone().add(new THREE.Vector3(0, 3, 0)), v, pick([0xff5a00, 0xff7a00, 0xffa000, 0xffc640]), 1, rand(0.18, 0.3), true, 0, 4, rand(4, 7), true);
-    }
-    makeExplosion(p0.clone().add(new THREE.Vector3(0, 4, 0)), 22, 0.25);
+    // 「水柱（白）→ 火球（オレンジ）→ 重い煙（黒）＋水蒸気（白）」の順に、時間差で見せる
+    // ① 激突（0.0秒）：海面はコンクリートのようにかたい。真っ白な巨大な水柱が、まっすぐ上と放射状に跳ね上がる
+    playWaterEntry(0, 1.4); playBigSplashSound(0, 1.8); tone(42, 0, 1.6, 'sine', 0.9, 24);
+    spawnFxParticle(p0.clone().add(new THREE.Vector3(0, 3, 0)), new THREE.Vector3(), 0xffffff, 0.9, 0.12, true, 0, 7, 4, true);   // 白い衝撃の光
     bigSplash(p0, 2.0);                                              // 白い水柱
-    for (let i = 0; i < 60; i++) {                                   // 上空へ吹き上がる白い水しぶき
-      spawnFxParticle(p0.clone(), new THREE.Vector3(rand(-12, 12), rand(30, 70), rand(-12, 12)), 0xffffff, 0.95, rand(1.6, 2.6), false, 28, 0.6, rand(1.2, 2.4), true);
+    for (let i = 0; i < 70; i++) {                                   // まっすぐ上へ、勢いよく伸びる水柱
+      spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-3, 3), 0, rand(-3, 3))), new THREE.Vector3(rand(-6, 6), rand(40, 80), rand(-6, 6)), pick([0xffffff, 0xf2f7fb]), 0.95, rand(1.6, 2.6), false, 30, 0.6, rand(1.4, 2.6), true);
+    }
+    for (let i = 0; i < 40; i++) {                                   // 放射状に広がる水しぶき
+      const a = Math.random() * Math.PI * 2;
+      spawnFxParticle(p0.clone().add(new THREE.Vector3(0, 1, 0)), new THREE.Vector3(Math.cos(a) * rand(20, 40), rand(10, 26), Math.sin(a) * rand(20, 40)), 0xffffff, 0.9, rand(1.0, 1.8), false, 26, 0.5, rand(1.0, 2.0), true);
     }
     flingPieces(p0.clone().add(new THREE.Vector3(0, 2, 0)), 14, { small: true, min: 0.3, max: 1.0, up0: 10, up1: 30 });
-    // ② 消火と黒煙（0.3〜1.0秒）：海水で炎は一気に消えるが、燃えきらなかった燃料の濃い黒煙と、
-    //    熱された海水の白い水蒸気が、まざり合いながらブワッとわき上がる
-    later(0.3, () => noiseBurst(0, 2.5, 0.35, 'highpass', 6000, 2500, 0.05));   // ジュワーッ（炎が消える音）
-    for (let k = 0; k <= 14; k++) later(0.3 + k * 0.05, () => {
-      for (let i = 0; i < 2; i++) spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-7, 7), rand(1, 4), rand(-7, 7))),
-        new THREE.Vector3(rand(-4, 4) + windX, rand(12, 24), rand(-4, 4)), pick([0x0c0c0c, 0x171717, 0x221e1c]), 0.92, rand(3.5, 5.5), false, -1.2, 5.5, rand(4, 6), true);   // 濃い黒煙
-      for (let i = 0; i < 2; i++) spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-8, 8), rand(1, 3), rand(-8, 8))),
-        new THREE.Vector3(rand(-5, 5) + windX, rand(9, 20), rand(-5, 5)), pick([0xffffff, 0xeef3f7, 0xdfe6ec]), 0.6, rand(2.8, 4.2), false, -0.8, 6, rand(4, 6.5), true);   // 白い水蒸気
+    // ② 爆発・火球の膨張（0.1〜0.3秒）：霧のように飛び散った燃料に引火。水柱を突き破るように、オレンジの炎が球状に一気にふくらむ
+    later(0.1, () => {
+      playBigBoom(0, 1.5);
+      spawnFxParticle(p0.clone().add(new THREE.Vector3(0, 10, 0)), new THREE.Vector3(), 0xfff2d0, 1, 0.2, true, 0, 9, 5, true);   // まぶしい閃光
+      crashOrangeLight(p0.clone().add(new THREE.Vector3(0, 6, 0)), 1.0);
+      if (crashLights.length) crashLights[crashLights.length - 1].life = 0.7;   // 炎はすぐ消えるので、オレンジの照り返しも短く
+      makeExplosion(p0.clone().add(new THREE.Vector3(0, 10, 0)), 24, 0.3);
+    });
+    for (let w = 0; w < 3; w++) later(0.1 + w * 0.07, () => {        // 3回に分けて、だんだん大きくふくらむ火球
+      for (let i = 0; i < 16; i++) {
+        const a = Math.random() * Math.PI * 2, e = rand(-0.2, 1.3);
+        const v = new THREE.Vector3(Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e)).multiplyScalar(rand(20, 36) * (1 + w * 0.35));
+        spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-2, 2), rand(6, 14), rand(-2, 2))), v, pick([0xff5a00, 0xff7a00, 0xffa000, 0xffc640, 0xffe080]), 1,
+          rand(0.22, 0.32) - w * 0.04, true, 0, 4.5, rand(4.5, 7.5), true);   // 0.4秒ごろまでに、すべて消える
+      }
+    });
+    // ③ 急激な冷却と煙への変化（0.4秒〜）：海水で炎は一瞬で消える。燃えきらなかった燃料の濃い「黒煙」と、
+    //    熱された海水の「白い水蒸気」が、まざり合いながら海面から空へモクモクと立ちのぼる
+    later(0.4, () => noiseBurst(0, 2.8, 0.35, 'highpass', 6000, 2500, 0.05));   // ジュワーッ（炎が消える音）
+    for (let k = 0; k <= 30; k++) later(0.4 + k * 0.08, () => {     // 0.4〜2.8秒：はじめは勢いよく、だんだんおだやかに
+      const f = 1 - k / 34;
+      const nB = k < 10 ? 3 : 2, nS = k < 10 ? 2 : 1;
+      for (let i = 0; i < nB; i++) spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-7, 7), rand(1, 4), rand(-7, 7))),
+        new THREE.Vector3(rand(-3, 3) + windX, rand(10, 22) * (0.5 + 0.5 * f), rand(-3, 3)), pick([0x0c0c0c, 0x171717, 0x221e1c, 0x2c2a28]), 0.9, rand(4.5, 6.5), false, -1.0, 6.5, rand(4, 6.5), true);   // 濃い黒煙（ゆっくり広がる）
+      for (let i = 0; i < nS; i++) spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-9, 9), rand(1, 3), rand(-9, 9))),
+        new THREE.Vector3(rand(-4, 4) + windX, rand(8, 18) * (0.5 + 0.5 * f), rand(-4, 4)), pick([0xffffff, 0xeef3f7, 0xdfe6ec]), 0.6, rand(3, 4.5), false, -0.8, 6.5, rand(4, 7), true);   // 白い水蒸気
+      if (k % 3 === 0) spawnFxParticle(p0.clone().add(new THREE.Vector3(rand(-4, 4), rand(14, 22), rand(-4, 4))),
+        new THREE.Vector3(rand(-2, 2) + windX, rand(3, 6), rand(-2, 2)), pick([0x3a3836, 0x4a4846, 0x5a5856]), 0.55, rand(6, 8), false, -0.3, 8, rand(6, 9), true);   // 上空でゆったり広がる灰色の煙
     });
     // ③ 海面の油膜：残った燃料がうすく広がり、ゆらゆらしながら、焦げあとと黒い煙を出しつづける
     makeOilSlick(p0, sea);
+    spawnPlaneWreck(p0, 'sea');                                      //    浮かんだ破片は、しばらくゆられてから沈んでいく
     for (let k = 0; k < 4; k++) {                                    // 海面に広がる波紋
       const ring = new THREE.Mesh(new THREE.RingGeometry(2, 3.2, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide }));
       ring.rotation.x = -Math.PI / 2; ring.position.set(p0.x, sea + 0.4, p0.z);
@@ -4887,7 +5396,10 @@ function crashFx(kind, pos) {
       flingPieces(pos, 20, { small: true, min: 0.25, max: 0.8 });
     });
     heavySmoke(pos.clone(), 1.2, 32);
-    crashFires.push({ pos: pos.clone(), t: 8, spawn: 0 });
+    crashFires.push({ pos: pos.clone(), t: CONFIG.CRASH_SHOW_TIME + CONFIG.CRASH_ANNOUNCE_TIME + 2, spawn: 0, age: 0 });
+    spawnPlaneWreck(pos, 'bridge');                                  // 残骸：甲板の上に散らばる／海へ落ちて沈む（海のときと同じく、激突の瞬間に吹き飛ぶ）
+    const deckGr = wreckGround(pos.x, pos.z, pos.y + 6);
+    if (deckGr.kind === 'deck' && !(lastHitStructure && lastHitStructure.bridge) && pos.y - deckGr.y < 8) makeDeckScorch(pos, deckGr.y, plane.yaw);   // 空母の甲板に残る焦げ跡
     const hitBr = lastHitStructure && lastHitStructure.bridge;       // 橋（道路・塔）にぶつかったときは、爆発のあと橋がくずれ落ちる
     if (hitBr && hitBr.userData.alive) later(0.7, () => destroyBridge(hitBr, new THREE.Vector3(pos.x, CONFIG.BRIDGE_DECK_Y, hitBr.position.z), true));
     later(1.6, () => playBigSplashSound(0, 1.6));                    // ③ ドボーーーン！（残骸が海へ）
@@ -7002,6 +7514,7 @@ function partialBridgeCollapse(br, hitPos) {
     if (dist > 1) {                                                  // ③ まっすぐ残る
       piece.position.set(x, Y - 3, 0);
       br.add(piece);
+      platforms.push({ bridge: br, intact: true, x0: x - segW / 2, x1: x + segW / 2, z0: bz - 13, z1: bz + 13, y: Y + 0.3 });   // 残った道路の上には、残骸が落ちて止まれる
       return;
     }
     // ② ぶら下がる（dist 0）／少したわむ（dist 1）：外がわの端をちょうつがいにして回す
@@ -7010,6 +7523,7 @@ function partialBridgeCollapse(br, hitPos) {
     piece.position.set(-side * segW / 2, 0, 0);
     hinge.add(piece);
     br.add(hinge);
+    if (dist === 1) platforms.push({ bridge: br, intact: true, x0: x - segW / 2, x1: x + segW / 2, z0: bz - 13, z1: bz + 13, y: Y - 0.5 });   // 少したわんだ道路にも、残骸は止まれる
     if (dist === 0) {
       charChunk(piece, 0.45);
       raggedEnd(piece, -side, segW);                                 // 抜けた区間がわの端を、ギザギザにちぎれた形に
@@ -7104,6 +7618,7 @@ function updateBridgeCollapse(dt) {
 }
 function updateDebris(dt) {
   updateOilSlicks(dt);
+  updateWreckParts(dt);
   updateBridgeCollapse(dt);
   for (let i = crashLights.length - 1; i >= 0; i--) {               // 爆発の光が、だんだん消える
     const c = crashLights[i];
@@ -7116,10 +7631,11 @@ function updateDebris(dt) {
     if (crashQueue[i].t <= 0) { const f = crashQueue[i].fn; crashQueue.splice(i, 1); f(); }
   }
   crashFires.forEach(cf => {                                         // 墜落した場所が、しばらく燃えつづける
-    cf.t -= dt; cf.spawn -= dt;
+    cf.t -= dt; cf.spawn -= dt; cf.age = (cf.age || 0) + dt;
     if (cf.t > 0 && cf.spawn <= 0) {
-      cf.spawn = 0.07;
-      spawnFxParticle(cf.pos.clone().add(new THREE.Vector3(rand(-4, 4), 0, rand(-4, 4))), new THREE.Vector3(rand(-1, 1), rand(4, 9), rand(-1, 1)),
+      const late = cf.age > 9;                                         // 9秒すぎたら、炎はおさまって煙だけ
+      cf.spawn = late ? 0.12 : 0.07;
+      if (!late) spawnFxParticle(cf.pos.clone().add(new THREE.Vector3(rand(-4, 4), 0, rand(-4, 4))), new THREE.Vector3(rand(-1, 1), rand(4, 9), rand(-1, 1)),
         pick([0xff6a00, 0xff9000, 0xffb020]), 0.9, rand(0.4, 0.8), true, -2, 1.8, rand(1.5, 2.5), true);
       spawnFxParticle(cf.pos.clone().add(new THREE.Vector3(rand(-3, 3), 2, rand(-3, 3))), new THREE.Vector3(rand(-1, 1) + windX, rand(6, 12), rand(-1, 1)),
         0x161616, 0.75, rand(3, 4.5), false, -1, 5, rand(2.5, 4), true);
@@ -7181,6 +7697,7 @@ function updateDebris(dt) {
   }
 }
 function clearDebris() {
+  wreckParts.forEach(w => scene.remove(w.g)); wreckParts = [];       // 前のプレイの残骸は、まとめて消す
   blownParts = []; bridgeSags = []; bridgeDribbles = [];
   debris.forEach(d => { if (d.mesh.parent) d.mesh.parent.remove(d.mesh); });
   debris = []; bridgeBlasts = []; crashQueue = []; crashFires = [];
